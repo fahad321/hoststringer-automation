@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hoststringer Campaign Sender</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Hoststringer Campaign Sender</h1>
+      <p>Upload your Excel leads, provide Hostinger SMTP login, and send personalized emails one by one.</p>
+
+      <form id="campaignForm">
+        <section>
+          <h2>1) Hostinger Login / SMTP</h2>
+          <label>Hostinger SMTP Server URL
+            <input name="hostingerServerUrl" placeholder="smtp.hostinger.com" required />
+          </label>
+          <label>SMTP Port
+            <input type="number" name="smtpPort" value="465" required />
+          </label>
+          <label>Use SSL/TLS (secure)
+            <select name="smtpSecure">
+              <option value="true" selected>true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>Hostinger Email (login)
+            <input type="email" name="hostingerEmail" required />
+          </label>
+          <label>Hostinger Email Password
+            <input type="password" name="hostingerPassword" required />
+          </label>
+          <label>From Name (optional)
+            <input name="fromName" placeholder="Your Company" />
+          </label>
+        </section>
+
+        <section>
+          <h2>2) Excel + Template</h2>
+          <label>Upload Excel (.xlsx)
+            <input type="file" name="leadsFile" accept=".xlsx" required />
+          </label>
+          <button type="button" id="previewBtn">Preview Excel</button>
+
+          <label>Subject Template
+            <input name="subjectTemplate" placeholder="Hello {{name}}, quick question" required />
+          </label>
+          <label>Body Template
+            <textarea name="bodyTemplate" rows="8" required placeholder="Hi {{name}},\n\nWe help teams with...\n\nRegards"></textarea>
+          </label>
+          <label>Delay between emails (ms)
+            <input type="number" name="delayMs" value="500" min="0" />
+          </label>
+          <small>Template tokens come from Excel columns, example: {{name}}, {{email}}, {{company}}</small>
+        </section>
+
+        <button type="submit" id="sendBtn">Send Campaign</button>
+      </form>
+
+      <section>
+        <h2>Status</h2>
+        <pre id="status">Ready.</pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
