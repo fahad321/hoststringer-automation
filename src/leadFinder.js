@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright-core');
+const { chromium } = require('playwright');
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -45,18 +45,14 @@ function makeLeadId() {
 async function launchBrowser() {
   try {
     return await chromium.launch({
-      channel: 'chrome',
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
   } catch (err) {
-    if (/chrome|executable|browser/i.test(String(err.message))) {
-      throw new Error(
-        'Lead Finder requires Google Chrome installed locally. ' +
-        'This feature is not available on the cloud deployment — run the app on your own machine.'
-      );
-    }
-    throw err;
+    throw new Error(
+      `Lead Finder could not launch a browser: ${err.message}. ` +
+      'Run "npx playwright install chromium" to install the bundled browser.'
+    );
   }
 }
 
