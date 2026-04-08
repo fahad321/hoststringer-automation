@@ -3,7 +3,7 @@ services:
     name: hoststringer-automation
     runtime: node
     plan: free
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm ci --omit=dev && npx playwright install --with-deps chromium
     startCommand: node src/index.js
     healthCheckPath: /api/health
     # Auto-deploy is handled by GitHub Actions (deploy job triggers this hook).
