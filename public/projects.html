@@ -154,6 +154,8 @@
       .badge-freelancer { background: #fef3c7; color: #92400e; }
       .badge-pph        { background: #ede9fe; color: #5b21b6; }
       .badge-guru       { background: #e0f2fe; color: #0369a1; }
+      .badge-reddit     { background: #fff1eb; color: #c0392b; }
+      .badge-linkedin   { background: #e8f0fe; color: #1a56b6; }
       .badge-government { background: #fee2e2; color: #991b1b; }
       .badge-web        { background: var(--zinc-100); color: var(--zinc-600); }
 
@@ -310,6 +312,7 @@
             </div>
           </div>
           <div class="card-body">
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Freelance platforms — direct scrape + multiple keyword variations each</p>
             <div class="source-grid">
               <label class="source-option">
                 <input type="checkbox" name="sources" value="upwork" checked />
@@ -324,8 +327,23 @@
                 <span>PeoplePerHour</span>
               </label>
               <label class="source-option">
-                <input type="checkbox" name="sources" value="guru" />
+                <input type="checkbox" name="sources" value="guru" checked />
                 <span>Guru.com</span>
+              </label>
+            </div>
+            <p style="font-size:12px;color:var(--text-muted);margin:14px 0 10px;">Broader channels — deep web search with many query variations</p>
+            <div class="source-grid">
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="reddit" checked />
+                <span>Reddit r/forhire</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="linkedin" checked />
+                <span>LinkedIn Contracts</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="staffaug" checked />
+                <span>Staff Aug Web</span>
               </label>
               <label class="source-option">
                 <input type="checkbox" name="sources" value="web" checked />
@@ -374,13 +392,18 @@
               <option value="Freelancer">Freelancer</option>
               <option value="PeoplePerHour">PeoplePerHour</option>
               <option value="Guru">Guru</option>
+              <option value="Reddit r/forhire">Reddit</option>
+              <option value="Reddit">Reddit (other)</option>
+              <option value="LinkedIn">LinkedIn</option>
               <option value="Government Tender">Government Tender</option>
               <option value="Web RFP">Web RFP</option>
+              <option value="Web">Web</option>
             </select>
             <select id="filterType">
               <option value="">All types</option>
               <option value="fixed">Fixed Price</option>
               <option value="hourly">Hourly</option>
+              <option value="contract">Contract</option>
               <option value="tender">Tender</option>
               <option value="rfp">RFP</option>
             </select>

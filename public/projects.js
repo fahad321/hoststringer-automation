@@ -79,6 +79,8 @@ function platformBadge(platform) {
     : platform === 'Freelancer'               ? 'badge-freelancer'
     : platform === 'PeoplePerHour'            ? 'badge-pph'
     : platform === 'Guru'                     ? 'badge-guru'
+    : /Reddit/i.test(platform)               ? 'badge-reddit'
+    : platform === 'LinkedIn'                 ? 'badge-linkedin'
     : platform === 'Government Tender'        ? 'badge-government'
     : 'badge-web';
   return `<span class="platform-badge ${cls}">${esc(platform)}</span>`;
@@ -95,7 +97,11 @@ function skillTags(skills) {
 }
 
 function typeTag(type) {
-  const label = type === 'hourly' ? 'Hourly' : type === 'tender' ? 'Tender' : type === 'rfp' ? 'RFP' : 'Fixed';
+  const label = type === 'hourly'   ? 'Hourly'
+    : type === 'tender'             ? 'Tender'
+    : type === 'rfp'                ? 'RFP'
+    : type === 'contract'           ? 'Contract'
+    : 'Fixed';
   return `<span class="type-tag">${label}</span>`;
 }
 
