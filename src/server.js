@@ -12,6 +12,7 @@ const {
   createLinkedinJobManager,
   runLinkedinConnectCampaign
 } = require('./linkedinAutomation');
+const { runLeadSearchWithEnrichment, createLeadJobManager } = require('./leadFinder');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -215,6 +216,7 @@ function buildLinkedinDryRunPreview({ rawRows, connectTemplate, dmTemplate, maxA
 function createApp(deps = {}) {
   const createTransport = deps.createTransport || nodemailer.createTransport;
   const linkedinJobManager = createLinkedinJobManager();
+  const leadJobManager = createLeadJobManager();
   const app = express();
 
   app.use(cors());
@@ -390,6 +392,89 @@ function createApp(deps = {}) {
       return res.status(400).json({ error: error.message || 'Failed to build LinkedIn dry run preview.' });
     }
   });
+
+  // ── Lead Finder ─────────────────────────────────────────────────────────────
+
+  app.post('/api/leads/search', async (req, res) => {
+    try {
+      const {
+        keywords, location, companySize, resourceType, industry,
+        sources, maxPerSource, enrichContacts
+      } = req.body;
+
+      const sourcesArr = Array.isArray(sources) ? sources : ['linkedin', 'indeed', 'web'];
+      const safeMax = Math.min(50, Math.max(5, Number(maxPerSource) || 20));
+      const shouldEnrich = String(enrichContacts) === 'true';
+
+      const job = leadJobManager.createJob({
+        sources: sourcesArr,
+        params: { keywords, location, companySize, resourceType, industry }
+      });
+
+      const abortController = new AbortController();
+      job._abort = () => abortController.abort();
+
+      runLeadSearchWithEnrichment({
+        keywords, location, companySize, resourceType, industry,
+        sources: sourcesArr, maxPerSource: safeMax, enrichContacts: shouldEnrich,
+        signal: abortController.signal,
+        onProgress: (phase) => leadJobManager.setPhase(job.id, phase),
+        onResult: (lead) => leadJobManager.appendResult(job.id, lead)
+      })
+        .then(() => leadJobManager.finishJob(job.id))
+        .catch((err) => leadJobManager.finishJob(job.id, err));
+
+      return res.json({ jobId: job.id });
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Failed to start lead search.' });
+    }
+  });
+
+  app.post('/api/leads/stop/:jobId', (req, res) => {
+    const job = leadJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+    if (typeof job._abort === 'function') job._abort();
+    leadJobManager.finishJob(job.id, new Error('Stopped by user.'));
+    return res.json({ ok: true });
+  });
+
+  app.get('/api/leads/job/:jobId', (req, res) => {
+    const job = leadJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+    // Don't expose internal _abort function
+    const { _abort, ...safe } = job;
+    void _abort;
+    return res.json(safe);
+  });
+
+  app.get('/api/leads/export/:jobId', (req, res) => {
+    const job = leadJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+
+    const rows = job.results.map((lead) => ({
+      'Company': lead.companyName,
+      'Location': lead.location,
+      'Company Size': lead.companySize,
+      'Industry': lead.industry,
+      'Open Roles': (lead.openRoles || []).join(', '),
+      'What they need': lead.snippet,
+      'Website': lead.companyWebsite,
+      'Emails': (lead.emails || []).join(', '),
+      'LinkedIn Company': lead.linkedinCompanyUrl,
+      'Source': lead.source,
+      'Source URL': lead.sourceUrl
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Leads');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="leads-${job.id}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buf);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
 
   app.get('/api/linkedin/job/:jobId', (req, res) => {
     const job = linkedinJobManager.getJob(req.params.jobId);

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hoststringer – Lead Finder</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      /* ── Lead Finder extras ───────────────────────────────── */
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 10px;
+        margin-top: 4px;
+      }
+      .source-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 14px;
+        border: 1.5px solid var(--border-input);
+        border-radius: var(--r-sm);
+        cursor: pointer;
+        transition: border-color .15s, background .15s;
+        user-select: none;
+        background: var(--surface);
+      }
+      .source-option:has(input:checked) {
+        border-color: var(--accent);
+        background: var(--accent-bg);
+      }
+      .source-option input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+      .source-option span { font-size: 13.5px; font-weight: 500; color: var(--text-sub); }
+      .source-option:has(input:checked) span { color: var(--accent); }
+
+      /* Stats bar */
+      .stats-bar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .stat-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 99px;
+        font-size: 13px;
+        font-weight: 600;
+        border: 1.5px solid var(--border);
+        background: var(--surface);
+      }
+      .stat-chip.total  { color: var(--text); }
+      .stat-chip.email  { color: var(--ok); border-color: var(--ok-border); background: var(--ok-bg); }
+      .stat-chip.li     { color: var(--info); border-color: var(--info-border); background: var(--info-bg); }
+
+      /* Filter row */
+      .filter-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+        align-items: center;
+      }
+      .filter-row input,
+      .filter-row select {
+        height: 36px;
+        font-size: 13px;
+        padding: 0 10px;
+        min-width: 0;
+        flex: 1 1 140px;
+        max-width: 200px;
+      }
+      .filter-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      /* Results table */
+      .leads-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        max-height: 520px;
+        overflow-y: auto;
+      }
+      .leads-table-wrap::-webkit-scrollbar { width: 5px; height: 5px; }
+      .leads-table-wrap::-webkit-scrollbar-thumb { background: var(--zinc-300); border-radius: 99px; }
+
+      table.leads-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        background: var(--surface);
+      }
+      .leads-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--zinc-50);
+        border-bottom: 1.5px solid var(--border);
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+      .leads-table td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .leads-table tr:last-child td { border-bottom: none; }
+      .leads-table tr:hover td { background: var(--zinc-50); }
+
+      .company-cell { min-width: 180px; }
+      .company-name { font-weight: 600; color: var(--text); }
+      .company-website { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--accent); text-decoration: none; margin-top: 2px; }
+      .company-website:hover { text-decoration: underline; }
+
+      .contact-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+      .contact-pill {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 2px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600;
+        text-decoration: none; cursor: pointer;
+      }
+      .pill-email { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-border); }
+      .pill-linkedin { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-border); }
+      .pill-none { background: var(--zinc-100); color: var(--text-muted); border: 1px solid var(--border); font-weight: 400; }
+
+      .source-badge {
+        display: inline-block; padding: 2px 8px; border-radius: 99px;
+        font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+      }
+      .badge-linkedin { background: #e8f0fe; color: #1a56b6; }
+      .badge-indeed   { background: #fef3c7; color: #92400e; }
+      .badge-seek     { background: #f0fdf4; color: var(--ok); }
+      .badge-web      { background: var(--zinc-100); color: var(--zinc-600); }
+
+      .role-tag { font-size: 12px; color: var(--text-sub); }
+      .snippet-text { font-size: 12px; color: var(--text-muted); max-width: 280px; line-height: 1.5; }
+
+      .action-cell { white-space: nowrap; }
+      .btn-xs {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 10px; border-radius: 5px; font-size: 12px; font-weight: 600;
+        cursor: pointer; border: none; transition: background .12s;
+      }
+      .btn-xs-email    { background: var(--ok-bg); color: var(--ok); }
+      .btn-xs-email:hover { background: var(--ok-border); }
+      .btn-xs-linkedin { background: var(--info-bg); color: var(--info); }
+      .btn-xs-linkedin:hover { background: var(--info-border); }
+
+      .empty-state {
+        text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;
+      }
+      .empty-state svg { display: block; margin: 0 auto 12px; opacity: .35; }
+    </style>
+  </head>
+  <body>
+
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="/index.html">
+          <div class="brand-mark">✉</div>
+          <span class="brand-name">Hoststringer</span>
+        </a>
+        <nav class="header-nav">
+          <a href="/index.html" class="nav-link">Email Campaign</a>
+          <a href="/linkedin.html" class="nav-link">LinkedIn</a>
+          <a href="/leads.html" class="nav-link active">Lead Finder</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+
+      <div class="page-hero">
+        <h1 class="page-title">Lead Finder</h1>
+        <p class="page-subtitle">Discover companies actively hiring IT staff — warm leads for your IT consultancy and staff augmentation pitches.</p>
+      </div>
+
+      <form id="leadSearchForm">
+
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">1</div>
+            <div class="card-header-text">
+              <h2>What to search for</h2>
+              <p>Define the type of IT resource these companies should be looking for</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <label class="field field-full">
+                <span class="field-label">
+                  Search Keywords
+                  <span class="field-optional">leave blank for smart defaults</span>
+                </span>
+                <input id="keywords" name="keywords"
+                  placeholder="e.g. software developer OR IT staff augmentation" />
+              </label>
+              <label class="field">
+                <span class="field-label">Resource Type</span>
+                <select name="resourceType" id="resourceType">
+                  <option value="any">Any IT Resource</option>
+                  <option value="developers" selected>Software Developers</option>
+                  <option value="devops">DevOps / Cloud Engineers</option>
+                  <option value="data">Data Engineers / Scientists</option>
+                  <option value="design">UX / Product Designers</option>
+                  <option value="architecture">Solution Architects</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Industry</span>
+                <select name="industry" id="industry">
+                  <option value="any">Any Industry</option>
+                  <option value="finance banking">Finance &amp; Banking</option>
+                  <option value="healthcare">Healthcare</option>
+                  <option value="retail ecommerce">Retail &amp; eCommerce</option>
+                  <option value="manufacturing">Manufacturing</option>
+                  <option value="government">Government &amp; Public Sector</option>
+                  <option value="startup technology">Startup / Tech</option>
+                  <option value="logistics transport">Logistics &amp; Transport</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">2</div>
+            <div class="card-header-text">
+              <h2>Target market</h2>
+              <p>Narrow by geography and company size</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">Location</span>
+                <input name="location" id="location" placeholder="e.g. Australia, Sydney, United States" />
+              </label>
+              <label class="field">
+                <span class="field-label">Company Size</span>
+                <select name="companySize" id="companySize">
+                  <option value="both" selected>SMB + Enterprise</option>
+                  <option value="smb">SMB only (10–500 staff)</option>
+                  <option value="enterprise">Enterprise only (500+)</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Max results per source</span>
+                <select name="maxPerSource" id="maxPerSource">
+                  <option value="10">10 per source</option>
+                  <option value="20" selected>20 per source</option>
+                  <option value="40">40 per source</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">3</div>
+            <div class="card-header-text">
+              <h2>Sources &amp; options</h2>
+              <p>Choose where to search and whether to enrich contact details</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="field-label" style="margin-bottom:12px;">Search sources</p>
+            <div class="source-grid">
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="linkedin" checked />
+                <span>LinkedIn Jobs</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="indeed" checked />
+                <span>Indeed</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="seek" />
+                <span>Seek (AU)</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="web" checked />
+                <span>Web Search</span>
+              </label>
+            </div>
+
+            <hr class="card-divider" />
+
+            <label class="source-option" style="max-width:380px;">
+              <input type="checkbox" name="enrichContacts" id="enrichContacts" value="true" />
+              <span>Enrich contact details — visit company websites for emails &amp; LinkedIn <span class="field-optional">slower</span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button type="submit" id="findLeadsBtn" class="btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Find Leads
+          </button>
+          <button type="button" id="stopLeadsBtn" class="btn-ghost" style="display:none">Stop</button>
+          <button type="button" id="exportLeadsBtn" class="btn-secondary" style="display:none">Export to Excel</button>
+        </div>
+
+      </form>
+
+      <div class="card" id="resultsCard" style="display:none">
+        <div class="card-header">
+          <div class="step-badge" style="background:var(--zinc-100);border-color:var(--border);color:var(--text-muted);">→</div>
+          <div class="card-header-text">
+            <h2>Results</h2>
+            <p id="resultsSubtitle">Searching…</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <div id="statusMessage" class="status-message">Starting search…</div>
+
+          <div id="statsBar" class="stats-bar" style="display:none">
+            <div class="stat-chip total">🏢 <span id="statTotal">0</span> companies found</div>
+            <div class="stat-chip email">✉ <span id="statEmail">0</span> with email</div>
+            <div class="stat-chip li">in <span id="statLinkedIn">0</span> with LinkedIn</div>
+          </div>
+
+          <div class="filter-row" id="filterRow" style="display:none">
+            <span class="filter-label">Filter:</span>
+            <input id="filterLocation" placeholder="Location…" title="Filter by location" />
+            <select id="filterSize">
+              <option value="">All sizes</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+              <option value="unknown">Unknown size</option>
+            </select>
+            <select id="filterSource">
+              <option value="">All sources</option>
+              <option value="LinkedIn Jobs">LinkedIn Jobs</option>
+              <option value="Indeed">Indeed</option>
+              <option value="Seek">Seek</option>
+              <option value="Web Search">Web Search</option>
+            </select>
+            <select id="filterContact">
+              <option value="">Any contact</option>
+              <option value="email">Has email</option>
+              <option value="linkedin">Has LinkedIn</option>
+              <option value="both">Has both</option>
+            </select>
+          </div>
+
+          <div class="leads-table-wrap" id="leadsTableWrap">
+            <div class="empty-state" id="emptyState">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Results will appear here as the search runs.
+            </div>
+            <table class="leads-table" id="leadsTable" style="display:none">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Location</th>
+                  <th>Looking For</th>
+                  <th>Contact</th>
+                  <th>Source</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="leadsTableBody"></tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+
+    <script src="/leads.js"></script>
+  </body>
+</html>
