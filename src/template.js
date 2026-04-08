@@ -25,10 +25,28 @@ function findValueByCandidates(row, candidates) {
 }
 
 function renderTemplate(template, context) {
-  return String(template || '').replace(/{{\s*([^{}\s]+)\s*}}/g, (_, token) => {
-    const value = context[token];
+  const normalizedKeyMap = {};
+  for (const [key, value] of Object.entries(context || {})) {
+    const normalizedToken = normalizeKey(key).replace(/[^a-z0-9]/g, '');
+    if (normalizedToken && normalizedKeyMap[normalizedToken] == null) {
+      normalizedKeyMap[normalizedToken] = value;
+    }
+  }
+
+  const replaceToken = (_, token) => {
+    const directValue = context ? context[token] : undefined;
+    if (directValue != null) {
+      return String(directValue);
+    }
+
+    const normalizedToken = normalizeKey(token).replace(/[^a-z0-9]/g, '');
+    const value = normalizedKeyMap[normalizedToken];
     return value == null ? '' : String(value);
-  });
+  };
+
+  return String(template || '')
+    .replace(/{{\s*([^{}\s]+)\s*}}/g, replaceToken)
+    .replace(/\{([a-zA-Z0-9_]+)\}/g, replaceToken);
 }
 
 function normalizeRow(rawRow) {
@@ -41,11 +59,15 @@ function normalizeRow(rawRow) {
 
   const email = findValueByCandidates(row, EMAIL_KEY_CANDIDATES) || normalized.email;
   const name = findValueByCandidates(row, NAME_KEY_CANDIDATES) || normalized.name;
+  const companyName = normalized.company_name || normalized.company || '';
+  const industryName = normalized.industry_name || normalized.industry || '';
 
   return {
     ...normalized,
     email,
-    name
+    name,
+    company_name: companyName,
+    industry_name: industryName
   };
 }
 

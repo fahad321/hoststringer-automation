@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hoststringer – LinkedIn Automation</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="/index.html">
+          <div class="brand-mark">✉</div>
+          <span class="brand-name">Hoststringer</span>
+        </a>
+        <nav class="header-nav">
+          <a href="/index.html" class="nav-link">Email Campaign</a>
+          <a href="/linkedin.html" class="nav-link active">LinkedIn Automation</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+
+      <div class="page-hero">
+        <h1 class="page-title">LinkedIn Connect Automation</h1>
+        <p class="page-subtitle">Send personalised connection requests and DMs to LinkedIn profiles from your Excel sheet. Keep daily volume low to protect your account.</p>
+      </div>
+
+      <form id="linkedinForm">
+
+        <!-- ── Step 1: Upload ────────────────────────── -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">1</div>
+            <div class="card-header-text">
+              <h2>Upload Leads</h2>
+              <p>Excel file containing LinkedIn profile URLs and contact data</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <label class="field">
+              <span class="field-label">Upload Excel (.xlsx)</span>
+              <div class="file-upload-zone">
+                <input type="file" name="leadsFile" id="linkedinLeadsFile" accept=".xlsx" required />
+                <span class="upload-icon">📂</span>
+                <p class="upload-text"><strong>Click to browse</strong> or drag &amp; drop your .xlsx file here</p>
+              </div>
+              <div id="linkedinFileState" class="file-state">No file selected.</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- ── Step 2: Templates ─────────────────────── -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">2</div>
+            <div class="card-header-text">
+              <h2>Message Templates</h2>
+              <p>Compose your connection note and direct message</p>
+            </div>
+          </div>
+          <div class="card-body">
+
+            <p class="section-label">Connection request</p>
+            <label class="field">
+              <span class="field-label">Note Template</span>
+              <textarea
+                name="connectTemplate"
+                id="connectTemplate"
+                rows="5"
+                required
+                placeholder="Hi {{first_name}}, I came across your profile and would love to connect."
+              ></textarea>
+            </label>
+
+            <hr class="card-divider" />
+
+            <p class="section-label">Already connected</p>
+            <label class="field">
+              <span class="field-label">
+                Direct Message Template
+                <span class="field-optional">used when already connected</span>
+              </span>
+              <textarea
+                name="dmTemplate"
+                id="dmTemplate"
+                rows="5"
+                required
+                placeholder="Hi {{first_name}}, thanks for connecting. Sharing this in case helpful..."
+              ></textarea>
+            </label>
+
+            <p class="hint">Use Excel column names as placeholders — e.g. <code>{{first_name}}</code>, <code>{{last_name}}</code>, <code>{{company_name}}</code></p>
+
+          </div>
+        </div>
+
+        <!-- ── Step 3: Strategy ──────────────────────── -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">3</div>
+            <div class="card-header-text">
+              <h2>Sending Strategy</h2>
+              <p>Control pacing and session settings to reduce account risk</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">Delay Between Actions</span>
+                <input type="number" name="delayMs" id="delayMs" value="12000" min="5000" step="1000" placeholder="ms" />
+              </label>
+              <label class="field">
+                <span class="field-label">Max Profiles This Run</span>
+                <input type="number" name="maxActions" id="maxActions" value="20" min="1" max="40" />
+              </label>
+              <label class="field field-full">
+                <span class="field-label">LinkedIn Login Session</span>
+                <select name="freshSession" id="freshSession">
+                  <option value="true" selected>Fresh session — log in fresh each run (recommended)</option>
+                  <option value="false">Reuse existing session</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">Recommended: 5–20 actions per day with 10–20 second delays between each action.</p>
+          </div>
+        </div>
+
+        <!-- ── Action bar ────────────────────────────── -->
+        <div class="action-bar">
+          <button type="submit" id="startLinkedinBtn" class="btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start Connect Run
+          </button>
+          <button type="button" id="dryRunLinkedinBtn" class="btn-secondary">Dry Run Preview</button>
+          <button type="button" id="resetLinkedinBtn" class="btn-ghost">Reset</button>
+        </div>
+
+      </form>
+
+      <!-- ── Status ──────────────────────────────────── -->
+      <div class="card">
+        <div class="card-header">
+          <div class="step-badge" style="background:var(--zinc-100);border-color:var(--border);color:var(--text-muted);">→</div>
+          <div class="card-header-text">
+            <h2>Job Status</h2>
+            <p>Live updates from the automation run</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="linkedinStatusMessage" class="status-message">Idle.</div>
+          <div id="linkedinStatusList" class="status-list linkedin-status-list"></div>
+        </div>
+      </div>
+
+    </main>
+
+    <script src="/linkedin.js"></script>
+  </body>
+</html>

@@ -1,4 +1,13 @@
-node_modules
+node_modules/
 .env
+.env.*
+!.env.example
 .DS_Store
-coverage
+coverage/
+
+# LinkedIn session — local browser state, never commit
+.linkedin-session/
+
+# Automation logs & screenshot artifacts
+logs/
+*.png

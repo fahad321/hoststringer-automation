@@ -3,66 +3,153 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hoststringer Campaign Sender</title>
+    <title>Hoststringer – Email Campaign</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="/index.html">
+          <div class="brand-mark">✉</div>
+          <span class="brand-name">Hoststringer</span>
+        </a>
+        <nav class="header-nav">
+          <a href="/index.html" class="nav-link active">Email Campaign</a>
+          <a href="/linkedin.html" class="nav-link">LinkedIn Automation</a>
+        </nav>
+      </div>
+    </header>
+
     <main class="container">
-      <h1>Hoststringer Campaign Sender</h1>
-      <p>Upload your Excel leads, provide Hostinger SMTP login, and send personalized emails one by one.</p>
+
+      <div class="page-hero">
+        <h1 class="page-title">Email Campaign Sender</h1>
+        <p class="page-subtitle">Upload your Excel leads, configure your Hostinger SMTP credentials, and send personalised emails one by one.</p>
+      </div>
 
       <form id="campaignForm">
-        <section>
-          <h2>1) Hostinger Login / SMTP</h2>
-          <label>Hostinger SMTP Server URL
-            <input name="hostingerServerUrl" placeholder="smtp.hostinger.com" required />
-          </label>
-          <label>SMTP Port
-            <input type="number" name="smtpPort" value="465" required />
-          </label>
-          <label>Use SSL/TLS (secure)
-            <select name="smtpSecure">
-              <option value="true" selected>true</option>
-              <option value="false">false</option>
-            </select>
-          </label>
-          <label>Hostinger Email (login)
-            <input type="email" name="hostingerEmail" required />
-          </label>
-          <label>Hostinger Email Password
-            <input type="password" name="hostingerPassword" required />
-          </label>
-          <label>From Name (optional)
-            <input name="fromName" placeholder="Your Company" />
-          </label>
-        </section>
 
-        <section>
-          <h2>2) Excel + Template</h2>
-          <label>Upload Excel (.xlsx)
-            <input type="file" name="leadsFile" accept=".xlsx" required />
-          </label>
-          <button type="button" id="previewBtn">Preview Excel</button>
+        <!-- ── Step 1: SMTP ─────────────────────────── -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">1</div>
+            <div class="card-header-text">
+              <h2>SMTP Configuration</h2>
+              <p>Your Hostinger email server credentials</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <label class="field field-full">
+                <span class="field-label">SMTP Server URL</span>
+                <input name="hostingerServerUrl" placeholder="smtp.hostinger.com" required />
+              </label>
+              <label class="field">
+                <span class="field-label">SMTP Port</span>
+                <input type="number" name="smtpPort" value="465" required />
+              </label>
+              <label class="field">
+                <span class="field-label">SSL / TLS</span>
+                <select name="smtpSecure">
+                  <option value="true" selected>Enabled (recommended)</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </label>
+              <label class="field field-full">
+                <span class="field-label">Email Address</span>
+                <input type="email" name="hostingerEmail" placeholder="you@yourdomain.com" required />
+              </label>
+              <label class="field">
+                <span class="field-label">Password</span>
+                <input type="password" name="hostingerPassword" required />
+              </label>
+              <label class="field">
+                <span class="field-label">
+                  From Name
+                  <span class="field-optional">optional</span>
+                </span>
+                <input name="fromName" placeholder="Your Company" />
+              </label>
+            </div>
+          </div>
+        </div>
 
-          <label>Subject Template
-            <input name="subjectTemplate" placeholder="Hello {{name}}, quick question" required />
-          </label>
-          <label>Body Template
-            <textarea name="bodyTemplate" rows="8" required placeholder="Hi {{name}},\n\nWe help teams with...\n\nRegards"></textarea>
-          </label>
-          <label>Delay between emails (ms)
-            <input type="number" name="delayMs" value="500" min="0" />
-          </label>
-          <small>Template tokens come from Excel columns, example: {{name}}, {{email}}, {{company}}</small>
-        </section>
+        <!-- ── Step 2: Leads & Template ─────────────── -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">2</div>
+            <div class="card-header-text">
+              <h2>Leads &amp; Email Template</h2>
+              <p>Upload your contacts and compose your message</p>
+            </div>
+          </div>
+          <div class="card-body">
 
-        <button type="submit" id="sendBtn">Send Campaign</button>
+            <p class="section-label">Leads file</p>
+            <label class="field">
+              <span class="field-label">Upload Excel (.xlsx)</span>
+              <div class="file-upload-zone">
+                <input type="file" name="leadsFile" id="leadsFileInput" accept=".xlsx" required />
+                <span class="upload-icon">📂</span>
+                <p class="upload-text"><strong>Click to browse</strong> or drag &amp; drop your .xlsx file here</p>
+              </div>
+              <div id="fileState" class="file-state">No file selected.</div>
+            </label>
+
+            <div class="inline-action">
+              <button type="button" id="previewBtn" class="btn-secondary">Preview Leads</button>
+            </div>
+
+            <hr class="card-divider" />
+
+            <p class="section-label">Message</p>
+            <div class="form-grid">
+              <label class="field field-full">
+                <span class="field-label">Subject Template</span>
+                <input name="subjectTemplate" placeholder="Hello {{name}}, quick question" required />
+              </label>
+              <label class="field field-full">
+                <span class="field-label">Body Template</span>
+                <textarea name="bodyTemplate" rows="9" required placeholder="Hi {{name}},&#10;&#10;We help teams with...&#10;&#10;Regards,&#10;{{fromName}}"></textarea>
+              </label>
+              <label class="field">
+                <span class="field-label">Delay Between Emails</span>
+                <input type="number" name="delayMs" value="500" min="0" placeholder="ms" />
+              </label>
+            </div>
+
+            <p class="hint">Use Excel column names as placeholders — e.g. <code>{{name}}</code>, <code>{{email}}</code>, <code>{{company}}</code></p>
+
+          </div>
+        </div>
+
+        <!-- ── Action bar ────────────────────────────── -->
+        <div class="action-bar">
+          <button type="submit" id="sendBtn" class="btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Campaign
+          </button>
+          <button type="button" id="resetBtn" class="btn-ghost">Reset</button>
+        </div>
+
       </form>
 
-      <section>
-        <h2>Status</h2>
-        <pre id="status">Ready.</pre>
-      </section>
+      <!-- ── Status ──────────────────────────────────── -->
+      <div class="card">
+        <div class="card-header">
+          <div class="step-badge" style="background:var(--zinc-100);border-color:var(--border);color:var(--text-muted);">→</div>
+          <div class="card-header-text">
+            <h2>Campaign Status</h2>
+            <p>Live results appear here as emails are sent</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="statusMessage" class="status-message">Ready.</div>
+          <div id="statusList" class="status-list"></div>
+        </div>
+      </div>
+
     </main>
 
     <script src="/app.js"></script>

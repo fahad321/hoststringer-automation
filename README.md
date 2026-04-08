@@ -15,6 +15,11 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Pages
+
+- Email campaign: `http://localhost:3000/index.html`
+- LinkedIn connect automation: `http://localhost:3000/linkedin.html`
+
 ## How To Use
 
 1. Fill Hostinger SMTP login details.
@@ -32,6 +37,16 @@ Open `http://localhost:3000`.
 - Special mapped placeholders:
   - `{{name}}`
   - `{{email}}`
+
+## LinkedIn Automation Notes
+
+- This uses browser automation with your local Chrome profile session.
+- Install Google Chrome on your machine.
+- Log in to LinkedIn in the opened automation browser window when prompted.
+- Output logs are written to `logs/linkedin-*.jsonl`.
+- Deep debug trace is written to `logs/linkedin-debug-*.jsonl`.
+- Per-profile screenshots on key skip/failure points are written to `logs/linkedin-artifacts-*`.
+- Keep volume low (`5-20` requests/day, `10-20s` delay) to reduce account risk.
 
 ## Test
 

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: hoststringer-automation
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/index.js
+    healthCheckPath: /api/health
+    # Auto-deploy is handled by GitHub Actions (deploy job triggers this hook).
+    # Set autoDeployTrigger: off to avoid double deploys when the repo is
+    # connected to Render directly.
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_ENV
+        value: production

@@ -3,8 +3,15 @@ const cors = require('cors');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const nodemailer = require('nodemailer');
+const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('path');
 const { normalizeRow, renderTemplate } = require('./template');
+const {
+  buildLinkedinLeads,
+  createLinkedinJobManager,
+  runLinkedinConnectCampaign
+} = require('./linkedinAutomation');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -61,9 +68,14 @@ async function runCampaign({
   const perEmailDelay = Math.max(0, Number(delayMs || 0));
 
   for (const recipient of recipients) {
+    const fullName = [recipient.first_name, recipient.last_name]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
     const context = {
       ...recipient,
-      name: recipient.name || recipient.email,
+      name: recipient.name || fullName || recipient.email,
       email: recipient.email
     };
 
@@ -79,12 +91,16 @@ async function runCampaign({
     try {
       const info = await transporter.sendMail(mailOptions);
       results.push({
+        companyName: recipient.company_name || recipient.company || '',
+        receiverName: context.name || '',
         email: recipient.email,
         status: 'sent',
         messageId: info.messageId || null
       });
     } catch (error) {
       results.push({
+        companyName: recipient.company_name || recipient.company || '',
+        receiverName: context.name || '',
         email: recipient.email,
         status: 'failed',
         error: error.message || 'Unknown send error'
@@ -107,8 +123,98 @@ async function runCampaign({
   };
 }
 
+function buildLinkedinDryRunPreview({ rawRows, connectTemplate, dmTemplate, maxActions }) {
+  if (!connectTemplate || !dmTemplate) {
+    throw new Error('Both connect note and DM templates are required.');
+  }
+
+  const leads = buildLinkedinLeads(rawRows);
+  if (!leads.length) {
+    throw new Error('No LinkedIn profile URLs found in the uploaded Excel file.');
+  }
+
+  const safeMaxActions = Math.min(40, Math.max(1, Number(maxActions || 20)));
+  const selected = leads.slice(0, safeMaxActions);
+  const inferDryRunAction = (lead, index) => {
+    const candidates = [
+      lead.dry_run_status,
+      lead.connection_status,
+      lead.linkedin_status,
+      lead.relationship,
+      lead.status,
+      lead.is_connected,
+      lead.pending_request
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const joined = candidates.join(' | ');
+    if (/(pending|invited|request sent|already invited)/i.test(joined)) return 'skip_pending';
+    if (/(connected|already connected|connection|1st)/i.test(joined)) return 'dm_existing';
+    if (/(new|not connected|prospect|connect)/i.test(joined)) return 'connect_new';
+
+    // Deterministic fallback so dry run always shows all three scenarios.
+    const cycle = ['connect_new', 'dm_existing', 'skip_pending'];
+    return cycle[index % cycle.length];
+  };
+
+  const results = selected.map((lead, index) => {
+    const renderedConnectMessage = renderTemplate(connectTemplate, lead).trim().slice(0, 300);
+    const renderedDmMessage = renderTemplate(dmTemplate, lead).trim().slice(0, 300);
+    const action = inferDryRunAction(lead, index);
+    let status = 'preview';
+    let detail = 'Dry run only. No LinkedIn action was sent.';
+    let simulatedAction = '';
+    let previewConnectMessage = '';
+    let previewDmMessage = '';
+
+    if (action === 'connect_new') {
+      status = 'preview_connect';
+      simulatedAction = 'new_connection_connect';
+      detail = 'Dry run: simulated NEW connection. Connect note template would be used.';
+      previewConnectMessage = renderedConnectMessage;
+    } else if (action === 'dm_existing') {
+      status = 'preview_dm';
+      simulatedAction = 'existing_connection_dm';
+      detail = 'Dry run: simulated ALREADY CONNECTED. DM template would be sent.';
+      previewDmMessage = renderedDmMessage;
+    } else {
+      status = 'preview_skipped';
+      simulatedAction = 'pending_skip';
+      detail = 'Dry run: simulated PENDING request. No action would be taken.';
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      linkedinUrl: lead.linkedin_url,
+      companyName: lead.company_name || '',
+      receiverName: lead.receiver_name || '',
+      status,
+      detail,
+      simulatedAction,
+      previewConnectMessage,
+      previewDmMessage
+    };
+  });
+
+  const connectPreviewCount = results.filter((r) => r.status === 'preview_connect').length;
+  const dmPreviewCount = results.filter((r) => r.status === 'preview_dm').length;
+  const skippedPreviewCount = results.filter((r) => r.status === 'preview_skipped').length;
+
+  return {
+    totalProfiles: leads.length,
+    cappedTo: safeMaxActions,
+    previewCount: results.length,
+    connectPreviewCount,
+    dmPreviewCount,
+    skippedPreviewCount,
+    results
+  };
+}
+
 function createApp(deps = {}) {
   const createTransport = deps.createTransport || nodemailer.createTransport;
+  const linkedinJobManager = createLinkedinJobManager();
   const app = express();
 
   app.use(cors());
@@ -192,7 +298,114 @@ function createApp(deps = {}) {
     }
   });
 
+  app.post('/api/linkedin/start', upload.single('leadsFile'), async (req, res) => {
+    try {
+      const { connectTemplate, dmTemplate, delayMs, maxActions, freshSession } = req.body;
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Excel file is required.' });
+      }
+
+      if (!connectTemplate || !dmTemplate) {
+        return res.status(400).json({ error: 'Both connect note and DM templates are required.' });
+      }
+
+      const rawRows = parseWorkbook(req.file.buffer);
+      const leads = buildLinkedinLeads(rawRows);
+      if (!leads.length) {
+        return res.status(400).json({
+          error: 'No LinkedIn profile URLs found in the uploaded Excel file.'
+        });
+      }
+
+      const safeDelayMs = Math.max(5000, Number(delayMs || 12000));
+      const safeMaxActions = Math.min(40, Math.max(1, Number(maxActions || 20)));
+
+      const logsDir = path.join(process.cwd(), 'logs');
+      await fs.mkdir(logsDir, { recursive: true });
+      const stamp = Date.now();
+      const logFile = path.join(logsDir, `linkedin-${stamp}.jsonl`);
+      const debugLogFile = path.join(logsDir, `linkedin-debug-${stamp}.jsonl`);
+      const artifactsDir = path.join(logsDir, `linkedin-artifacts-${stamp}`);
+      await fs.mkdir(artifactsDir, { recursive: true });
+
+      const job = linkedinJobManager.createJob({
+        total: Math.min(leads.length, safeMaxActions),
+        logFile,
+        debugLogFile,
+        artifactsDir
+      });
+
+      const sessionDir = path.join(process.cwd(), '.linkedin-session');
+      const shouldUseFreshSession = String(freshSession ?? 'true').toLowerCase() !== 'false';
+      if (shouldUseFreshSession && fsSync.existsSync(sessionDir)) {
+        await fs.rm(sessionDir, { recursive: true, force: true });
+      }
+
+      runLinkedinConnectCampaign({
+        leads,
+        connectTemplate,
+        dmTemplate,
+        delayMs: safeDelayMs,
+        maxActions: safeMaxActions,
+        sessionDir,
+        logFile,
+        debugLogFile,
+        artifactsDir,
+        onResult: (result) => linkedinJobManager.appendResult(job.id, result)
+      })
+        .then(() => linkedinJobManager.finishJob(job.id))
+        .catch((error) => linkedinJobManager.finishJob(job.id, error));
+
+      return res.json({
+        jobId: job.id,
+        totalProfiles: leads.length,
+        cappedTo: safeMaxActions,
+        delayMs: safeDelayMs,
+        logFile,
+        debugLogFile,
+        artifactsDir
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message || 'Failed to start LinkedIn job.' });
+    }
+  });
+
+  app.post('/api/linkedin/dry-run', upload.single('leadsFile'), async (req, res) => {
+    try {
+      const { connectTemplate, dmTemplate, maxActions } = req.body;
+      if (!req.file) {
+        return res.status(400).json({ error: 'Excel file is required.' });
+      }
+
+      const rawRows = parseWorkbook(req.file.buffer);
+      const preview = buildLinkedinDryRunPreview({
+        rawRows,
+        connectTemplate,
+        dmTemplate,
+        maxActions
+      });
+      return res.json(preview);
+    } catch (error) {
+      return res.status(400).json({ error: error.message || 'Failed to build LinkedIn dry run preview.' });
+    }
+  });
+
+  app.get('/api/linkedin/job/:jobId', (req, res) => {
+    const job = linkedinJobManager.getJob(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found.' });
+    }
+
+    return res.json(job);
+  });
+
   return app;
 }
 
-module.exports = { createApp, parseWorkbook, runCampaign };
+module.exports = {
+  createApp,
+  parseWorkbook,
+  runCampaign,
+  buildLinkedinDryRunPreview
+};
