@@ -41,7 +41,14 @@ jobs:
 
     steps:
       - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          curl -fsSX POST "${{ secrets.RENDER_DEPLOY_HOOK }}" \
-            --retry 3 \
-            --retry-delay 5
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK secret is not set. Add it in:"
+            echo "  GitHub repo → Settings → Secrets → Actions → New secret"
+            echo "  Name: RENDER_DEPLOY_HOOK"
+            echo "  Value: your Render deploy hook URL (from Render dashboard → service → Settings → Deploy Hook)"
+            exit 0
+          fi
+          curl -fsSX POST "$RENDER_DEPLOY_HOOK" --retry 3 --retry-delay 5
