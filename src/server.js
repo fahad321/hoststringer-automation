@@ -13,6 +13,7 @@ const {
   runLinkedinConnectCampaign
 } = require('./linkedinAutomation');
 const { runLeadSearchWithEnrichment, createLeadJobManager } = require('./leadFinder');
+const { runProjectSearch, createProjectJobManager } = require('./projectFinder');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -217,6 +218,7 @@ function createApp(deps = {}) {
   const createTransport = deps.createTransport || nodemailer.createTransport;
   const linkedinJobManager = createLinkedinJobManager();
   const leadJobManager = createLeadJobManager();
+  const projectJobManager = createProjectJobManager();
   const app = express();
 
   app.use(cors());
@@ -470,6 +472,80 @@ function createApp(deps = {}) {
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     res.setHeader('Content-Disposition', `attachment; filename="leads-${job.id}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buf);
+  });
+
+  // ── Project Finder ───────────────────────────────────────────────────────────
+
+  app.post('/api/projects/search', async (req, res) => {
+    try {
+      const { keywords, location, resourceType, sources, maxPerSource } = req.body;
+      const sourcesArr = Array.isArray(sources) ? sources : ['upwork', 'freelancer', 'web'];
+      const safeMax = Math.min(30, Math.max(5, Number(maxPerSource) || 10));
+
+      const job = projectJobManager.createJob({
+        sources: sourcesArr,
+        params: { keywords, location, resourceType }
+      });
+
+      const abortController = new AbortController();
+      job._abort = () => abortController.abort();
+
+      runProjectSearch({
+        keywords, location, resourceType,
+        sources: sourcesArr, maxPerSource: safeMax,
+        signal: abortController.signal,
+        onProgress: (phase) => projectJobManager.setPhase(job.id, phase),
+        onResult: (project) => projectJobManager.appendResult(job.id, project)
+      })
+        .then(() => projectJobManager.finishJob(job.id))
+        .catch((err) => projectJobManager.finishJob(job.id, err));
+
+      return res.json({ jobId: job.id });
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Failed to start project search.' });
+    }
+  });
+
+  app.post('/api/projects/stop/:jobId', (req, res) => {
+    const job = projectJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+    if (typeof job._abort === 'function') job._abort();
+    projectJobManager.finishJob(job.id, new Error('Stopped by user.'));
+    return res.json({ ok: true });
+  });
+
+  app.get('/api/projects/job/:jobId', (req, res) => {
+    const job = projectJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+    const { _abort, ...safe } = job;
+    void _abort;
+    return res.json(safe);
+  });
+
+  app.get('/api/projects/export/:jobId', (req, res) => {
+    const job = projectJobManager.getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found.' });
+
+    const rows = job.results.map((p) => ({
+      'Title': p.title,
+      'Platform': p.platform,
+      'Budget': p.budget,
+      'Project Type': p.projectType,
+      'Skills': (p.skills || []).join(', '),
+      'Description': p.description,
+      'Posted': p.postedAt,
+      'Contact / Poster': p.contactName,
+      'Location': p.location,
+      'Listing URL': p.listingUrl
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Projects');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="projects-${job.id}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     return res.send(buf);
   });

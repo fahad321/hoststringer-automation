@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hoststringer – Project Leads</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      /* ── Project-specific styles ────────────────────────────── */
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+        margin-top: 4px;
+      }
+      .source-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 14px;
+        border: 1.5px solid var(--border-input);
+        border-radius: var(--r-sm);
+        cursor: pointer;
+        transition: border-color .15s, background .15s;
+        user-select: none;
+        background: var(--surface);
+      }
+      .source-option:has(input:checked) {
+        border-color: var(--accent);
+        background: var(--accent-bg);
+      }
+      .source-option input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+      .source-option span { font-size: 13.5px; font-weight: 500; color: var(--text-sub); }
+      .source-option:has(input:checked) span { color: var(--accent); }
+
+      /* Stats */
+      .stats-bar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .stat-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 99px;
+        font-size: 13px;
+        font-weight: 600;
+        border: 1.5px solid var(--border);
+        background: var(--surface);
+      }
+      .stat-chip.total { color: var(--text); }
+      .stat-chip.budget { color: var(--ok); border-color: var(--ok-border); background: var(--ok-bg); }
+
+      /* Filter row */
+      .filter-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+        align-items: center;
+      }
+      .filter-row input,
+      .filter-row select {
+        height: 36px;
+        font-size: 13px;
+        padding: 0 10px;
+        min-width: 0;
+        flex: 1 1 140px;
+        max-width: 200px;
+      }
+      .filter-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      /* Project cards table */
+      .projects-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        max-height: 560px;
+        overflow-y: auto;
+      }
+      .projects-table-wrap::-webkit-scrollbar { width: 5px; height: 5px; }
+      .projects-table-wrap::-webkit-scrollbar-thumb { background: var(--zinc-300); border-radius: 99px; }
+
+      table.projects-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        background: var(--surface);
+      }
+      .projects-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--zinc-50);
+        border-bottom: 1.5px solid var(--border);
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+      }
+      .projects-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .projects-table tr:last-child td { border-bottom: none; }
+      .projects-table tr:hover td { background: var(--zinc-50); }
+
+      .proj-title-cell { min-width: 220px; }
+      .proj-title {
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 3px;
+        line-height: 1.4;
+      }
+      .proj-contact {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 3px;
+      }
+      .proj-desc {
+        font-size: 12.5px;
+        color: var(--text-sub);
+        max-width: 340px;
+        line-height: 1.55;
+      }
+
+      /* Platform badge */
+      .platform-badge {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 99px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        white-space: nowrap;
+      }
+      .badge-upwork     { background: #e6f4ea; color: #1e7e34; }
+      .badge-freelancer { background: #fef3c7; color: #92400e; }
+      .badge-pph        { background: #ede9fe; color: #5b21b6; }
+      .badge-guru       { background: #e0f2fe; color: #0369a1; }
+      .badge-government { background: #fee2e2; color: #991b1b; }
+      .badge-web        { background: var(--zinc-100); color: var(--zinc-600); }
+
+      /* Budget chip */
+      .budget-chip {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        background: var(--ok-bg);
+        color: var(--ok);
+        border: 1px solid var(--ok-border);
+        white-space: nowrap;
+      }
+      .budget-chip.empty {
+        background: var(--zinc-50);
+        color: var(--text-muted);
+        border-color: var(--border);
+        font-weight: 400;
+      }
+
+      /* Skill tags */
+      .skill-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+      .skill-tag {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        background: var(--accent-bg);
+        color: var(--accent);
+        border: 1px solid var(--accent-border, var(--border));
+      }
+
+      /* Type tag */
+      .type-tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        background: var(--zinc-100);
+        color: var(--zinc-600);
+      }
+
+      .action-cell { white-space: nowrap; }
+      .btn-view {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 12px;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        transition: opacity .12s;
+      }
+      .btn-view:hover { opacity: 0.88; }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-muted);
+        font-size: 14px;
+      }
+      .empty-state svg { display: block; margin: 0 auto 12px; opacity: .35; }
+    </style>
+  </head>
+  <body>
+
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="/index.html">
+          <div class="brand-mark">✉</div>
+          <span class="brand-name">Hoststringer</span>
+        </a>
+        <nav class="header-nav">
+          <a href="/index.html" class="nav-link">Email Campaign</a>
+          <a href="/linkedin.html" class="nav-link">LinkedIn</a>
+          <a href="/leads.html" class="nav-link">Lead Finder</a>
+          <a href="/projects.html" class="nav-link active">Project Leads</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+
+      <div class="page-hero">
+        <h1 class="page-title">Project Lead Finder</h1>
+        <p class="page-subtitle">Discover active IT projects and contracts posted on Upwork, Freelancer, PeoplePerHour, Guru, government tender portals and across the web — ready for your IT consultancy to pitch on.</p>
+      </div>
+
+      <form id="projectSearchForm">
+
+        <!-- Step 1: What to search -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">1</div>
+            <div class="card-header-text">
+              <h2>What you're looking for</h2>
+              <p>Define the type of IT work these projects should involve</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-grid">
+              <label class="field field-full">
+                <span class="field-label">
+                  Keywords
+                  <span class="field-optional">leave blank for smart defaults</span>
+                </span>
+                <input id="keywords" name="keywords" placeholder="e.g. staff augmentation, React development, cloud migration" />
+              </label>
+              <label class="field">
+                <span class="field-label">Resource / Skill Type</span>
+                <select name="resourceType" id="resourceType">
+                  <option value="any">Any IT Resource</option>
+                  <option value="developers" selected>Software Developers</option>
+                  <option value="devops">DevOps / Cloud Engineers</option>
+                  <option value="data">Data Engineers / Scientists</option>
+                  <option value="design">UX / Product Designers</option>
+                  <option value="architecture">Solution Architects</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Location / Market</span>
+                <input name="location" id="location" placeholder="e.g. Australia, United States, Remote" />
+              </label>
+              <label class="field">
+                <span class="field-label">Results per source</span>
+                <select name="maxPerSource" id="maxPerSource">
+                  <option value="5">5 per source</option>
+                  <option value="10" selected>10 per source</option>
+                  <option value="20">20 per source</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Sources -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">2</div>
+            <div class="card-header-text">
+              <h2>Search sources</h2>
+              <p>Choose which platforms to search for active project listings</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="source-grid">
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="upwork" checked />
+                <span>Upwork</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="freelancer" checked />
+                <span>Freelancer</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="pph" checked />
+                <span>PeoplePerHour</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="guru" />
+                <span>Guru.com</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="web" checked />
+                <span>RFPs &amp; Tenders</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action bar -->
+        <div class="action-bar">
+          <button type="submit" id="findProjectsBtn" class="btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Find Projects
+          </button>
+          <button type="button" id="stopProjectsBtn" class="btn-ghost" style="display:none">Stop</button>
+          <button type="button" id="exportProjectsBtn" class="btn-secondary" style="display:none">Export to Excel</button>
+        </div>
+
+      </form>
+
+      <!-- Results -->
+      <div class="card" id="resultsCard" style="display:none">
+        <div class="card-header">
+          <div class="step-badge" style="background:var(--zinc-100);border-color:var(--border);color:var(--text-muted);">→</div>
+          <div class="card-header-text">
+            <h2>Project Listings</h2>
+            <p id="resultsSubtitle">Searching…</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <div id="statusMessage" class="status-message">Starting search…</div>
+
+          <div id="statsBar" class="stats-bar" style="display:none">
+            <div class="stat-chip total">📋 <span id="statTotal">0</span> projects found</div>
+            <div class="stat-chip budget">💰 <span id="statWithBudget">0</span> with budget info</div>
+          </div>
+
+          <div class="filter-row" id="filterRow" style="display:none">
+            <span class="filter-label">Filter:</span>
+            <input id="filterKeyword" placeholder="Search titles…" title="Filter by keyword" />
+            <select id="filterPlatform">
+              <option value="">All platforms</option>
+              <option value="Upwork">Upwork</option>
+              <option value="Freelancer">Freelancer</option>
+              <option value="PeoplePerHour">PeoplePerHour</option>
+              <option value="Guru">Guru</option>
+              <option value="Government Tender">Government Tender</option>
+              <option value="Web RFP">Web RFP</option>
+            </select>
+            <select id="filterType">
+              <option value="">All types</option>
+              <option value="fixed">Fixed Price</option>
+              <option value="hourly">Hourly</option>
+              <option value="tender">Tender</option>
+              <option value="rfp">RFP</option>
+            </select>
+          </div>
+
+          <div class="projects-table-wrap" id="projectsTableWrap">
+            <div class="empty-state" id="emptyState">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Results will appear here as the search runs.
+            </div>
+            <table class="projects-table" id="projectsTable" style="display:none">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Platform</th>
+                  <th>Budget</th>
+                  <th>Skills</th>
+                  <th>Description</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="projectsTableBody"></tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+
+    <script src="/projects.js"></script>
+  </body>
+</html>
