@@ -1,5 +1,5 @@
 'use strict';
-const { chromium } = require('playwright');
+// No browser required — all fetch-based (RSS, Reddit JSON API, DuckDuckGo HTML)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (base, spread = 600) => sleep(base + Math.random() * spread);
@@ -37,24 +37,25 @@ function extractSkills(text) {
   return SKILL_LIST.filter((s) => lower.includes(s.toLowerCase())).slice(0, 8);
 }
 
-const IT_SIGNAL = /\b(software|developer|engineer|devops|cloud|api|app|application|platform|system|database|backend|frontend|fullstack|mobile|web|tech(?:nology)?|IT|digital|data|saas|infrastructure|microservice|qa|testing|react|angular|vue|node|python|java|php|aws|azure|gcp|kubernetes|docker|blockchain|cybersecurity)\b/i;
+const IT_SIGNAL = /\b(software|developer|engineer|devops|cloud|api|app|application|platform|system|database|backend|frontend|fullstack|mobile|web|tech(?:nology)?|IT|digital|data|saas|infrastructure|microservice|qa|testing|react|angular|vue|node|python|java|php|aws|azure|gcp|kubernetes|docker|blockchain|cybersecurity|programmer|coding|coder)\b/i;
 
 function isITRelevant(text) { return IT_SIGNAL.test(text); }
+
+function stripHtml(s) {
+  return s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+}
 
 function stripSuffix(title) {
   return title
     .replace(/\s*[-–|]\s*(Upwork|Freelancer|PeoplePerHour|Guru|Toptal|Fiverr|LinkedIn|Reddit|Indeed|Seek|Glassdoor).*/i, '')
     .replace(/\s*\|.*$/, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&').replace(/&#x27;/g, "'")
     .trim();
 }
 
-// ─── Fetch-based DuckDuckGo search (GET, no browser fingerprint) ─────────────
-// DDG rate-limits after ~3 consecutive rapid requests. Strategy:
-//   • Use GET (not POST — POST triggers 202 responses)
-//   • Enforce minimum 3s between queries
-//   • Keep total query count low (≤3 per source)
+// ─── DuckDuckGo fetch (GET-based, no browser, global rate-limit) ──────────────
+// DDG rate-limits after ~3 rapid consecutive requests.
+// Strategy: GET (not POST), ≥3.2 s between all DDG calls, ≤3 queries per source.
 
 const DDG_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -63,12 +64,11 @@ const DDG_HEADERS = {
   'Referer': 'https://duckduckgo.com/'
 };
 
-let lastDdgRequest = 0; // timestamp — enforces global 3s gap
+let lastDdgRequest = 0;
 
 async function ddgFetch(query, max = 12) {
   const results = [];
   try {
-    // Global rate-limit: wait at least 3200ms since last DDG call
     const gap = Date.now() - lastDdgRequest;
     if (gap < 3200) await sleep(3200 - gap);
     lastDdgRequest = Date.now();
@@ -77,7 +77,7 @@ async function ddgFetch(query, max = 12) {
     const res = await fetch(url, { headers: DDG_HEADERS });
     if (!res.ok) return results;
     const html = await res.text();
-    if (!html.includes('result__a')) return results; // bot page or empty
+    if (!html.includes('result__a')) return results;
 
     const linkRe = /class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
     const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
@@ -88,19 +88,18 @@ async function ddgFetch(query, max = 12) {
       const u = m[1];
       if (!u || u.includes('duckduckgo')) continue;
       urls.push(u);
-      titles.push(m[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").trim());
+      titles.push(stripHtml(m[2]));
     }
     while ((m = snippetRe.exec(html)) !== null && snippets.length < max + 5) {
-      snippets.push(m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').trim());
+      snippets.push(stripHtml(m[1]).slice(0, 400));
     }
     for (let i = 0; i < Math.min(urls.length, max); i++) {
-      results.push({ title: titles[i] || '', url: urls[i], snippet: (snippets[i] || '').slice(0, 400) });
+      results.push({ title: titles[i] || '', url: urls[i], snippet: snippets[i] || '' });
     }
-  } catch (_) { /* network error */ }
+  } catch (_) {}
   return results;
 }
 
-// Run at most `maxQueries` queries, stop early if we have enough results
 async function ddgMulti(queries, { filterFn, maxTotal = 20, maxQueries = 3 } = {}) {
   const seen = new Set();
   const out = [];
@@ -137,81 +136,74 @@ function ddgToProject(r, platform, source, extra = {}) {
   };
 }
 
-// ─── Browser (used only for platform scraping) ────────────────────────────────
+// ─── XML/Atom helpers ─────────────────────────────────────────────────────────
 
-const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-
-async function launchBrowser() {
-  try {
-    return await chromium.launch({ headless: true, args: BROWSER_ARGS });
-  } catch (err) {
-    throw new Error(`Project Finder could not launch a browser: ${err.message}. Run "npx playwright install chromium".`);
-  }
+function xmlTag(xml, tag) {
+  const m = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+  if (!m) return '';
+  return stripHtml(m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'));
 }
 
-async function newCtx(browser) {
-  return browser.newContext({
-    userAgent: UA,
-    viewport: { width: 1280, height: 800 },
-    extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' }
-  });
+function xmlAttr(xml, tag, attr) {
+  const m = new RegExp(`<${tag}[^>]*${attr}="([^"]+)"`, 'i').exec(xml);
+  return m ? m[1] : '';
 }
 
-// ─── 1. Upwork ────────────────────────────────────────────────────────────────
+// ─── 1. Upwork (Atom RSS feed + DDG fallback) ─────────────────────────────────
 
-async function searchUpwork(browser, { keywords, location, maxResults }) {
+async function searchUpwork({ keywords, location, maxResults }) {
   const projects = [];
-  const ctx = await newCtx(browser);
-  const page = await ctx.newPage();
 
-  // Direct scrape
+  // Primary: Upwork public Atom job feed
   try {
-    const url = `https://www.upwork.com/nx/search/jobs/?q=${encodeURIComponent(keywords)}&sort=recency${location ? `&location=${encodeURIComponent(location)}` : ''}`;
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await jitter(3000, 1000);
-    const jobs = await page.evaluate(() => {
-      const out = [];
-      for (const card of Array.from(document.querySelectorAll('[data-test="job-tile"], section[data-job-uid], article[data-ev-job-uid]')).slice(0, 40)) {
-        const titleEl = card.querySelector('h2 a, h3 a, [data-test="job-title"], a[class*="title"]');
-        const title = (titleEl?.textContent || '').trim();
-        const href = titleEl?.href || '';
-        const snippet = (card.querySelector('[data-test="job-description-text"], .air3-line-clamp, [class*="description"]')?.textContent || '').trim().slice(0, 350);
-        const budget = (card.querySelector('[data-test="budget"], [class*="budget"], [class*="rate"]')?.textContent || '').trim();
-        const skills = Array.from(card.querySelectorAll('[data-test="token"], [class*="skill"]')).map((s) => s.textContent.trim()).slice(0, 8);
-        const posted = (card.querySelector('[data-test="posted-on"], time')?.textContent || '').trim();
-        if (title && href) out.push({ title, href, snippet, budget, skills, posted });
+    const q = encodeURIComponent(keywords);
+    const feedUrl = `https://www.upwork.com/ab/feed/jobs/atom?q=${q}&sort=recency&paging=0%3B25`;
+    const res = await fetch(feedUrl, {
+      headers: {
+        'User-Agent': DDG_HEADERS['User-Agent'],
+        'Accept': 'application/atom+xml,application/xml,text/xml,*/*'
       }
-      return out;
     });
-    for (const j of jobs) {
-      if (projects.length >= maxResults) break;
-      if (!isITRelevant(j.title + ' ' + j.snippet)) continue;
-      projects.push({
-        id: makeProjId(), title: j.title, description: j.snippet,
-        platform: 'Upwork',
-        budget: j.budget || extractBudget(j.snippet),
-        skills: j.skills.length ? j.skills : extractSkills(j.snippet),
-        postedAt: j.posted,
-        listingUrl: j.href.startsWith('http') ? j.href : `https://www.upwork.com${j.href}`,
-        contactName: '', location: location || '',
-        projectType: (j.budget || '').toLowerCase().includes('/hr') ? 'hourly' : 'fixed',
-        source: 'upwork'
-      });
+    if (res.ok) {
+      const xml = await res.text();
+      const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
+      let m;
+      while ((m = entryRe.exec(xml)) !== null && projects.length < maxResults) {
+        const entry = m[1];
+        const title = xmlTag(entry, 'title');
+        const link = xmlAttr(entry, 'link', 'href') || xmlTag(entry, 'id');
+        const summary = xmlTag(entry, 'summary').slice(0, 400);
+        const updated = xmlTag(entry, 'updated');
+        if (!title || !link) continue;
+        const text = title + ' ' + summary;
+        if (!isITRelevant(text)) continue;
+        projects.push({
+          id: makeProjId(),
+          title: stripSuffix(title),
+          description: summary,
+          platform: 'Upwork',
+          budget: extractBudget(text),
+          skills: extractSkills(text),
+          postedAt: updated ? new Date(updated).toLocaleDateString() : '',
+          listingUrl: link,
+          contactName: '', location: location || '',
+          projectType: summary.toLowerCase().includes('/hr') ? 'hourly' : 'fixed',
+          source: 'upwork'
+        });
+      }
     }
-  } catch (_) { /* fall through */ }
-  finally { await ctx.close().catch(() => null); }
+  } catch (_) {}
 
-  // DDG supplement (max 2 queries — rate limit protection)
+  // Fallback: DDG site: search
   if (projects.length < maxResults) {
     const queries = [
-      `site:upwork.com/jobs ${keywords} ${location || ''}`,
-      `site:upwork.com/jobs "staff augmentation" OR "development team" ${location || ''}`
+      `site:upwork.com/jobs "${keywords}" ${location || ''}`.trim(),
+      `site:upwork.com/jobs "staff augmentation" OR "software development" ${location || ''}`.trim()
     ];
     const seen = new Set(projects.map((p) => p.listingUrl));
     const results = await ddgMulti(queries, {
       maxTotal: maxResults - projects.length, maxQueries: 2,
-      filterFn: (r) => /upwork\.com\/(jobs|freelance-jobs|o\/jobs)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
+      filterFn: (r) => r.url.includes('upwork.com') && isITRelevant(r.title + ' ' + r.snippet)
     });
     for (const r of results) {
       if (!seen.has(r.url)) projects.push(ddgToProject(r, 'Upwork', 'upwork', { location }));
@@ -220,175 +212,56 @@ async function searchUpwork(browser, { keywords, location, maxResults }) {
   return projects.slice(0, maxResults);
 }
 
-// ─── 2. Freelancer ────────────────────────────────────────────────────────────
+// ─── 2. Freelancer (DDG site: search) ────────────────────────────────────────
 
-async function searchFreelancer(browser, { keywords, location, maxResults }) {
-  const projects = [];
-  const ctx = await newCtx(browser);
-  const page = await ctx.newPage();
-
-  try {
-    const slug = keywords.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    await page.goto(`https://www.freelancer.com/jobs/${slug}/`, { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await jitter(2500, 800);
-    const jobs = await page.evaluate(() => {
-      const out = [];
-      for (const card of Array.from(document.querySelectorAll('.JobSearchCard-item, [class*="JobSearchCard"]')).slice(0, 40)) {
-        const titleEl = card.querySelector('a.JobSearchCard-primary-heading-link, h2 a, a[href*="/projects/"]');
-        const title = (titleEl?.textContent || '').trim();
-        const href = titleEl?.href || '';
-        const snippet = (card.querySelector('[class*="description"], p')?.textContent || '').trim().slice(0, 350);
-        const budget = (card.querySelector('[class*="JobSearchCard-primary-price"]')?.textContent || '').trim();
-        const skills = Array.from(card.querySelectorAll('[class*="JobSearchCard-primary-tagsLink"]')).map((s) => s.textContent.trim()).slice(0, 8);
-        if (title && href) out.push({ title, href, snippet, budget, skills });
-      }
-      return out;
-    });
-    for (const j of jobs) {
-      if (projects.length >= maxResults) break;
-      if (!isITRelevant(j.title + ' ' + j.snippet)) continue;
-      projects.push({
-        id: makeProjId(), title: j.title, description: j.snippet,
-        platform: 'Freelancer',
-        budget: j.budget || extractBudget(j.snippet),
-        skills: j.skills.length ? j.skills : extractSkills(j.snippet),
-        postedAt: '',
-        listingUrl: j.href.startsWith('http') ? j.href : `https://www.freelancer.com${j.href}`,
-        contactName: '', location: location || '', projectType: 'fixed', source: 'freelancer'
-      });
-    }
-  } catch (_) { /* fall through */ }
-  finally { await ctx.close().catch(() => null); }
-
-  if (projects.length < maxResults) {
-    const queries = [
-      `site:freelancer.com/projects "software development" ${location || ''}`,
-      `site:freelancer.com/projects "web application" OR "mobile app" ${location || ''}`
-    ];
-    const seen = new Set(projects.map((p) => p.listingUrl));
-    const results = await ddgMulti(queries, {
-      maxTotal: maxResults - projects.length, maxQueries: 2,
-      filterFn: (r) => /freelancer\.com\/(projects?|jobs?)\//.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
-    });
-    for (const r of results) {
-      if (!seen.has(r.url)) projects.push(ddgToProject(r, 'Freelancer', 'freelancer', { location }));
-    }
-  }
-  return projects.slice(0, maxResults);
+async function searchFreelancer({ keywords, location, maxResults }) {
+  const queries = [
+    `site:freelancer.com/projects "${keywords}" ${location || ''}`.trim(),
+    `site:freelancer.com/projects "software development" OR "web application" ${location || ''}`.trim()
+  ];
+  const results = await ddgMulti(queries, {
+    maxTotal: maxResults, maxQueries: 2,
+    filterFn: (r) => /freelancer\.com\/(projects?|contest)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
+  });
+  return results.map((r) => ddgToProject(r, 'Freelancer', 'freelancer', { location })).slice(0, maxResults);
 }
 
-// ─── 3. PeoplePerHour ────────────────────────────────────────────────────────
+// ─── 3. PeoplePerHour (DDG site: search) ─────────────────────────────────────
 
-async function searchPeoplePerHour(browser, { keywords, maxResults }) {
-  const projects = [];
-  const ctx = await newCtx(browser);
-  const page = await ctx.newPage();
-
-  try {
-    await page.goto(`https://www.peopleperhour.com/freelance-jobs?q=${encodeURIComponent(keywords)}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await jitter(2000, 600);
-    const jobs = await page.evaluate(() => {
-      const out = [];
-      for (const card of Array.from(document.querySelectorAll('article, [class*="card"], [class*="listing"]')).slice(0, 40)) {
-        const titleEl = card.querySelector('h2 a, h3 a, a[href*="/job/"], a[href*="/project/"]');
-        if (!titleEl || !titleEl.href.includes('peopleperhour.com')) continue;
-        const title = titleEl.textContent.trim();
-        const snippet = (card.querySelector('p, [class*="desc"]')?.textContent || '').trim().slice(0, 300);
-        const budget = (card.querySelector('[class*="price"], [class*="budget"]')?.textContent || '').trim();
-        out.push({ title, href: titleEl.href, snippet, budget });
-      }
-      return out;
-    });
-    for (const j of jobs) {
-      if (projects.length >= maxResults) break;
-      if (!isITRelevant(j.title + ' ' + j.snippet)) continue;
-      projects.push({
-        id: makeProjId(), title: j.title, description: j.snippet,
-        platform: 'PeoplePerHour',
-        budget: j.budget || extractBudget(j.snippet),
-        skills: extractSkills(j.snippet), postedAt: '',
-        listingUrl: j.href, contactName: '', location: '', projectType: 'fixed', source: 'pph'
-      });
-    }
-  } catch (_) { /* fall through */ }
-  finally { await ctx.close().catch(() => null); }
-
-  if (projects.length < maxResults) {
-    const queries = [
-      `site:peopleperhour.com ${keywords}`,
-      `site:peopleperhour.com "software development" OR "web development"`
-    ];
-    const seen = new Set(projects.map((p) => p.listingUrl));
-    const results = await ddgMulti(queries, {
-      maxTotal: maxResults - projects.length, maxQueries: 2,
-      filterFn: (r) => r.url.includes('peopleperhour.com') && isITRelevant(r.title + ' ' + r.snippet)
-    });
-    for (const r of results) {
-      if (!seen.has(r.url)) projects.push(ddgToProject(r, 'PeoplePerHour', 'pph'));
-    }
-  }
-  return projects.slice(0, maxResults);
+async function searchPeoplePerHour({ keywords, maxResults }) {
+  const queries = [
+    `site:peopleperhour.com "${keywords}"`,
+    `site:peopleperhour.com "software development" OR "web development" OR "mobile app"`
+  ];
+  const results = await ddgMulti(queries, {
+    maxTotal: maxResults, maxQueries: 2,
+    filterFn: (r) => r.url.includes('peopleperhour.com') && isITRelevant(r.title + ' ' + r.snippet)
+  });
+  return results.map((r) => ddgToProject(r, 'PeoplePerHour', 'pph')).slice(0, maxResults);
 }
 
-// ─── 4. Guru ─────────────────────────────────────────────────────────────────
+// ─── 4. Guru (DDG site: search) ──────────────────────────────────────────────
 
-async function searchGuru(browser, { keywords, maxResults }) {
-  const projects = [];
-  const ctx = await newCtx(browser);
-  const page = await ctx.newPage();
-
-  try {
-    await page.goto(`https://www.guru.com/d/jobs/q/${encodeURIComponent(keywords)}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await jitter(2000, 600);
-    const jobs = await page.evaluate(() => {
-      const out = [];
-      for (const card of Array.from(document.querySelectorAll('.serviceItem, [class*="jobItem"], li[class*="list"]')).slice(0, 30)) {
-        const titleEl = card.querySelector('a[href*="/d/jobs/"]');
-        if (!titleEl) continue;
-        const snippet = (card.querySelector('p, [class*="desc"]')?.textContent || '').trim().slice(0, 300);
-        const budget = (card.querySelector('[class*="price"], [class*="budget"]')?.textContent || '').trim();
-        out.push({ title: titleEl.textContent.trim(), href: titleEl.href, snippet, budget });
-      }
-      return out;
-    });
-    for (const j of jobs) {
-      if (projects.length >= maxResults) break;
-      if (!isITRelevant(j.title + ' ' + j.snippet)) continue;
-      projects.push({
-        id: makeProjId(), title: j.title, description: j.snippet,
-        platform: 'Guru', budget: j.budget || extractBudget(j.snippet),
-        skills: extractSkills(j.snippet), postedAt: '',
-        listingUrl: j.href, contactName: '', location: '', projectType: 'fixed', source: 'guru'
-      });
-    }
-  } catch (_) { /* fall through */ }
-  finally { await ctx.close().catch(() => null); }
-
-  if (projects.length < maxResults) {
-    const queries = [
-      `site:guru.com/d/jobs ${keywords}`,
-      `site:guru.com/d/jobs "software development" OR "web development"`
-    ];
-    const seen = new Set(projects.map((p) => p.listingUrl));
-    const results = await ddgMulti(queries, {
-      maxTotal: maxResults - projects.length, maxQueries: 2,
-      filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
-    });
-    for (const r of results) {
-      if (!seen.has(r.url)) projects.push(ddgToProject(r, 'Guru', 'guru'));
-    }
-  }
-  return projects.slice(0, maxResults);
+async function searchGuru({ keywords, maxResults }) {
+  const queries = [
+    `site:guru.com/d/jobs "${keywords}"`,
+    `site:guru.com/d/jobs "software development" OR "web development"`
+  ];
+  const results = await ddgMulti(queries, {
+    maxTotal: maxResults, maxQueries: 2,
+    filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
+  });
+  return results.map((r) => ddgToProject(r, 'Guru', 'guru')).slice(0, maxResults);
 }
 
-// ─── 5. Reddit r/forhire (fetch-based JSON API) ───────────────────────────────
+// ─── 5. Reddit (fetch JSON API — no rate limiting) ────────────────────────────
 
 async function searchReddit({ keywords, maxResults }) {
   const projects = [];
   const seen = new Set();
   const subreddits = ['forhire', 'slavelabour', 'entrepreneur'];
 
-  const redditHeaders = {
+  const headers = {
     'User-Agent': 'hoststringer-bot/1.0 (IT consultancy lead finder)',
     'Accept': 'application/json'
   };
@@ -397,7 +270,7 @@ async function searchReddit({ keywords, maxResults }) {
     if (projects.length >= maxResults) break;
     try {
       const url = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent('[HIRING] ' + keywords)}&restrict_sr=1&sort=new&limit=30&t=month`;
-      const res = await fetch(url, { headers: redditHeaders });
+      const res = await fetch(url, { headers });
       if (!res.ok) continue;
       const data = await res.json();
 
@@ -406,7 +279,6 @@ async function searchReddit({ keywords, maxResults }) {
         const post = child.data;
         if (!post?.title) continue;
 
-        // Only [HIRING] posts for actual project needs
         const isHiring = /\[HIRING\]|\[H\]\s/i.test(post.title) || post.link_flair_text?.toLowerCase().includes('hiring');
         if (!isHiring) continue;
 
@@ -432,66 +304,39 @@ async function searchReddit({ keywords, maxResults }) {
           source: 'reddit'
         });
       }
-    } catch (_) { /* skip sub */ }
-    await jitter(500, 300);
+    } catch (_) {}
+    await jitter(400, 200);
   }
   return projects;
 }
 
-// ─── 6. LinkedIn contract jobs (browser) ─────────────────────────────────────
+// ─── 6. LinkedIn contract jobs (DDG site: search) ────────────────────────────
 
-async function searchLinkedInContracts(browser, { keywords, location, maxResults }) {
-  const projects = [];
-  const ctx = await newCtx(browser);
-  const page = await ctx.newPage();
-
-  try {
-    const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location || '')}&f_JT=C&sortBy=DD`;
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await jitter(2500, 800);
-    for (const sel of ['button[aria-label*="Dismiss"]', 'button.modal__dismiss']) {
-      await page.locator(sel).first().click({ timeout: 1500 }).catch(() => null);
-    }
-    const jobs = await page.evaluate(() => {
-      const out = [];
-      for (const card of Array.from(document.querySelectorAll('.base-card, .job-search-card')).slice(0, 30)) {
-        const title = (card.querySelector('h3.base-search-card__title')?.textContent || '').trim();
-        const company = (card.querySelector('h4.base-search-card__subtitle')?.textContent || '').trim();
-        const loc = (card.querySelector('.job-search-card__location')?.textContent || '').trim();
-        const href = card.querySelector('a[href*="/jobs/view/"]')?.href || '';
-        if (title && href) out.push({ title, company, loc, href });
-      }
-      return out;
-    });
-    for (const j of jobs) {
-      if (projects.length >= maxResults) break;
-      if (!isITRelevant(j.title + ' ' + j.company)) continue;
-      projects.push({
-        id: makeProjId(),
-        title: `[Contract] ${j.title}`,
-        description: `${j.company} is seeking a ${j.title} on a contract basis.`,
-        platform: 'LinkedIn',
-        budget: '', skills: extractSkills(j.title), postedAt: '',
-        listingUrl: j.href, contactName: j.company,
-        location: j.loc || location || '', projectType: 'contract', source: 'linkedin'
-      });
-    }
-  } catch (_) { /* skip */ }
-  finally { await ctx.close().catch(() => null); }
-  return projects;
+async function searchLinkedInContracts({ keywords, location, maxResults }) {
+  const loc = location || '';
+  const queries = [
+    `site:linkedin.com/jobs "${keywords}" contract ${loc}`.trim(),
+    `site:linkedin.com/jobs "software developer" OR "engineer" contract ${loc}`.trim()
+  ];
+  const results = await ddgMulti(queries, {
+    maxTotal: maxResults, maxQueries: 2,
+    filterFn: (r) => r.url.includes('linkedin.com/jobs') && isITRelevant(r.title + ' ' + r.snippet)
+  });
+  return results.map((r) => ({
+    ...ddgToProject(r, 'LinkedIn', 'linkedin', { location, projectType: 'contract' }),
+    projectType: 'contract'
+  })).slice(0, maxResults);
 }
 
 // ─── 7. Staff augmentation deep web search ───────────────────────────────────
 
-// Only exclude the freelance project marketplaces we already scrape directly
-// (don't exclude LinkedIn/Indeed/Seek — those can surface company RFP pages)
+// Exclude the freelance project marketplaces we search directly
 const FREELANCE_DOMAINS = /\b(upwork\.com|freelancer\.com|guru\.com|peopleperhour\.com|fiverr\.com|toptal\.com|bark\.com|contra\.com)\b/i;
 
 async function searchStaffAugWeb({ keywords, location, maxResults }) {
   const loc = location || '';
   const yr = CURRENT_YEAR;
 
-  // 3 carefully chosen queries: companies that NEED IT help
   const queries = [
     `"IT staff augmentation" OR "dedicated development team" needed partner ${loc} ${yr}`,
     `"outsource software development" OR "hire development team" project ${loc} ${yr}`,
@@ -523,7 +368,6 @@ async function searchRFPsAndTenders({ keywords, location, maxResults }) {
   const loc = location || '';
   const yr = CURRENT_YEAR;
 
-  // 3 targeted queries — most likely to return RFP/tender pages
   const queries = [
     `"request for proposal" "software development" OR "IT services" ${loc} ${yr}`,
     `government tender "IT services" OR "software development" OR "digital transformation" ${loc} ${yr}`,
@@ -578,62 +422,55 @@ async function runProjectSearch({
     onResult(proj);
   }
 
-  // ── Sources that need a browser ──────────────────────────────────────────
-  const needBrowser = sources.some((s) => ['upwork', 'freelancer', 'pph', 'guru', 'linkedin'].includes(s));
-  const browser = needBrowser ? await launchBrowser() : null;
+  // Reddit first — no rate limiting, fast
+  if (sources.includes('reddit') && !isCancelled()) {
+    onProgress('Searching Reddit r/forhire for [HIRING] IT posts…');
+    const results = await searchReddit({ keywords: searchKeywords, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-  try {
-    if (sources.includes('reddit') && !isCancelled()) {
-      onProgress('Searching Reddit r/forhire for [HIRING] IT posts…');
-      const results = await searchReddit({ keywords: searchKeywords, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  // Upwork via RSS feed (fast, reliable) — no DDG quota used
+  if (sources.includes('upwork') && !isCancelled()) {
+    onProgress('Searching Upwork job feed…');
+    const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-    if (sources.includes('upwork') && !isCancelled()) {
-      onProgress('Searching Upwork (direct scrape + 5 DDG variations)…');
-      const results = await searchUpwork(browser, { keywords: searchKeywords, location, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  // DDG-based sources — each respects the 3.2 s gap via shared lastDdgRequest
+  if (sources.includes('freelancer') && !isCancelled()) {
+    onProgress('Searching Freelancer.com listings…');
+    const results = await searchFreelancer({ keywords: searchKeywords, location, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-    if (sources.includes('freelancer') && !isCancelled()) {
-      onProgress('Searching Freelancer (direct scrape + 5 DDG variations)…');
-      const results = await searchFreelancer(browser, { keywords: searchKeywords, location, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  if (sources.includes('pph') && !isCancelled()) {
+    onProgress('Searching PeoplePerHour listings…');
+    const results = await searchPeoplePerHour({ keywords: searchKeywords, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-    if (sources.includes('pph') && !isCancelled()) {
-      onProgress('Searching PeoplePerHour…');
-      const results = await searchPeoplePerHour(browser, { keywords: searchKeywords, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  if (sources.includes('guru') && !isCancelled()) {
+    onProgress('Searching Guru.com listings…');
+    const results = await searchGuru({ keywords: searchKeywords, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-    if (sources.includes('guru') && !isCancelled()) {
-      onProgress('Searching Guru.com…');
-      const results = await searchGuru(browser, { keywords: searchKeywords, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  if (sources.includes('linkedin') && !isCancelled()) {
+    onProgress('Searching LinkedIn contract jobs…');
+    const results = await searchLinkedInContracts({ keywords: searchKeywords, location, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
 
-    if (sources.includes('linkedin') && !isCancelled()) {
-      onProgress('Searching LinkedIn contract jobs…');
-      const results = await searchLinkedInContracts(browser, { keywords: searchKeywords, location, maxResults: maxPerSource });
-      results.forEach(emit);
-    }
+  if (sources.includes('staffaug') && !isCancelled()) {
+    onProgress('Deep web search — companies needing IT teams…');
+    const results = await searchStaffAugWeb({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });
+    results.forEach(emit);
+  }
 
-    // ── Fetch-only sources (no browser needed) ──────────────────────────────
-    if (sources.includes('staffaug') && !isCancelled()) {
-      onProgress('Deep web search — companies needing IT teams (10 query variations)…');
-      const results = await searchStaffAugWeb({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });
-      results.forEach(emit);
-    }
-
-    if (sources.includes('web') && !isCancelled()) {
-      onProgress('Searching RFPs, government tenders & procurement (11 query variations)…');
-      const results = await searchRFPsAndTenders({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });
-      results.forEach(emit);
-    }
-
-  } finally {
-    if (browser) await browser.close().catch(() => null);
+  if (sources.includes('web') && !isCancelled()) {
+    onProgress('Searching RFPs, government tenders & procurement…');
+    const results = await searchRFPsAndTenders({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });
+    results.forEach(emit);
   }
 }
 
