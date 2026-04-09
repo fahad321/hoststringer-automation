@@ -3,7 +3,7 @@ services:
     name: hoststringer-automation
     runtime: node
     plan: free
-    buildCommand: npm ci --omit=dev && npx playwright install --with-deps chromium
+    buildCommand: npm ci --omit=dev && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium
     startCommand: node src/index.js
     healthCheckPath: /api/health
     # Auto-deploy is handled by GitHub Actions (deploy job triggers this hook).
@@ -13,3 +13,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
