@@ -1,4 +1,6 @@
 'use strict';
+// Ensure Playwright finds browsers inside node_modules (works on Render/cloud)
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { chromium } = require('playwright');
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
