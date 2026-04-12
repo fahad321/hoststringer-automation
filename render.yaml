@@ -6,7 +6,7 @@ services:
     buildCommand: npm ci --omit=dev && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium
     startCommand: node src/index.js
     healthCheckPath: /api/health
-    autoDeploy: yes
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production

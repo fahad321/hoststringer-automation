@@ -1,9 +1,25 @@
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
+const { execSync } = require('node:child_process');
 // Ensure Playwright finds browsers inside node_modules (works on Render/cloud)
 process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { chromium } = require('playwright');
 const { normalizeRow, renderTemplate } = require('./template');
+
+// Install Playwright's Chromium at runtime if the build step missed it
+async function ensureChromium() {
+  try {
+    const exe = chromium.executablePath();
+    if (!fsSync.existsSync(exe)) throw new Error('not found');
+  } catch (_) {
+    execSync('npx playwright install chromium', {
+      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '0' },
+      timeout: 180000,
+      stdio: 'pipe'
+    });
+  }
+}
 
 const LINKEDIN_URL_CANDIDATES = [
   'person_linkedin_url',
@@ -1884,6 +1900,7 @@ async function runLinkedinConnectCampaign({
     await appendLog(debugLogFile, data);
   }
 
+  await ensureChromium();
   const isHeadless = !!(liAtCookie || process.env.RENDER || process.env.NODE_ENV === 'production');
   const context = await chromium.launchPersistentContext(sessionDir, {
     headless: isHeadless,

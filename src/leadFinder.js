@@ -1,7 +1,22 @@
 'use strict';
+const fsSync = require('node:fs');
+const { execSync } = require('node:child_process');
 // Ensure Playwright finds browsers inside node_modules (works on Render/cloud)
 process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { chromium } = require('playwright');
+
+async function ensureChromium() {
+  try {
+    const exe = chromium.executablePath();
+    if (!fsSync.existsSync(exe)) throw new Error('not found');
+  } catch (_) {
+    execSync('npx playwright install chromium', {
+      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '0' },
+      timeout: 180000,
+      stdio: 'pipe'
+    });
+  }
+}
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -45,6 +60,7 @@ function makeLeadId() {
 // ─── Browser launch ───────────────────────────────────────────────────────────
 
 async function launchBrowser() {
+  await ensureChromium();
   try {
     return await chromium.launch({
       headless: true,
