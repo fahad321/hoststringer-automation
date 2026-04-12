@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { chromium } = require('playwright-core');
+const { chromium } = require('playwright');
 const { normalizeRow, renderTemplate } = require('./template');
 
 const LINKEDIN_URL_CANDIDATES = [
@@ -1881,10 +1881,17 @@ async function runLinkedinConnectCampaign({
     await appendLog(debugLogFile, data);
   }
 
+  const isHeadless = process.env.RENDER || process.env.NODE_ENV === 'production';
   const context = await chromium.launchPersistentContext(sessionDir, {
-    channel: 'chrome',
-    headless: false,
-    viewport: null
+    headless: isHeadless,
+    viewport: isHeadless ? { width: 1280, height: 800 } : null,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled'
+    ],
+    ...(isHeadless ? {} : { channel: 'chrome' })
   });
 
   try {
