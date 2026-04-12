@@ -226,7 +226,8 @@ async function pollJob(jobId) {
   } else {
     activeJobId = null;
     pollTimer = null;
-    const finalMsg = `${msg} Log: ${job.logFile} Debug: ${job.debugLogFile || '-'} Artifacts: ${job.artifactsDir || '-'}`;
+    let finalMsg = `${msg} Log: ${job.logFile} Debug: ${job.debugLogFile || '-'} Artifacts: ${job.artifactsDir || '-'}`;
+    if (job.error) finalMsg = `Error: ${job.error}\n\n${finalMsg}`;
     setStatusMessage(finalMsg);
   }
 }

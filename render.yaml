@@ -6,10 +6,7 @@ services:
     buildCommand: npm ci --omit=dev && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium
     startCommand: node src/index.js
     healthCheckPath: /api/health
-    # Auto-deploy is handled by GitHub Actions (deploy job triggers this hook).
-    # Set autoDeployTrigger: off to avoid double deploys when the repo is
-    # connected to Render directly.
-    autoDeployTrigger: off
+    autoDeploy: yes
     envVars:
       - key: NODE_ENV
         value: production
