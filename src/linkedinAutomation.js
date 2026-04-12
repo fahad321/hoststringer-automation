@@ -1870,6 +1870,7 @@ async function runLinkedinConnectCampaign({
   logFile,
   debugLogFile = null,
   artifactsDir = null,
+  liAtCookie = null,
   onResult
 }) {
   const isContextClosedError = (error) => /Target page, context or browser has been closed/i.test(
@@ -1881,7 +1882,7 @@ async function runLinkedinConnectCampaign({
     await appendLog(debugLogFile, data);
   }
 
-  const isHeadless = process.env.RENDER || process.env.NODE_ENV === 'production';
+  const isHeadless = !!(liAtCookie || process.env.RENDER || process.env.NODE_ENV === 'production');
   const context = await chromium.launchPersistentContext(sessionDir, {
     headless: isHeadless,
     viewport: isHeadless ? { width: 1280, height: 800 } : null,
@@ -1894,6 +1895,19 @@ async function runLinkedinConnectCampaign({
     ...(isHeadless ? {} : { channel: 'chrome' })
   });
 
+  // Inject li_at cookie before navigating so LinkedIn sees us as logged in
+  if (liAtCookie) {
+    await context.addCookies([{
+      name: 'li_at',
+      value: liAtCookie,
+      domain: '.linkedin.com',
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None'
+    }]);
+  }
+
   try {
     const page = context.pages()[0] || (await context.newPage());
     await page.goto('https://www.linkedin.com/feed/', {
@@ -1901,7 +1915,18 @@ async function runLinkedinConnectCampaign({
       timeout: 45000
     });
 
-    await waitForLinkedinLogin(page);
+    if (liAtCookie) {
+      // With a cookie, we should already be on the feed — verify quickly
+      const url = page.url();
+      if (!isLinkedinAuthenticated(url)) {
+        throw new Error(
+          'LinkedIn cookie (li_at) is invalid or expired. ' +
+          'Please get a fresh cookie: Chrome → F12 → Application → Cookies → linkedin.com → li_at → Value.'
+        );
+      }
+    } else {
+      await waitForLinkedinLogin(page);
+    }
 
     const cappedLeads = leads.slice(0, maxActions);
     for (let index = 0; index < cappedLeads.length; index += 1) {

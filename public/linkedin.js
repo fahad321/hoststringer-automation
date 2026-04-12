@@ -76,6 +76,7 @@ function saveFormState() {
     delayMs: form.delayMs.value,
     maxActions: form.maxActions.value,
     freshSession: form.freshSession.value
+    // li_at cookie intentionally NOT saved to localStorage for security
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -207,6 +208,8 @@ function buildLinkedinFormData(file) {
   formData.append('delayMs', form.delayMs.value);
   formData.append('maxActions', form.maxActions.value);
   formData.append('freshSession', form.freshSession.value);
+  const cookie = document.getElementById('liAtCookie').value.trim();
+  if (cookie) formData.append('liAtCookie', cookie);
   return formData;
 }
 

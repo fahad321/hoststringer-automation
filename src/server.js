@@ -304,7 +304,7 @@ function createApp(deps = {}) {
 
   app.post('/api/linkedin/start', upload.single('leadsFile'), async (req, res) => {
     try {
-      const { connectTemplate, dmTemplate, delayMs, maxActions, freshSession } = req.body;
+      const { connectTemplate, dmTemplate, delayMs, maxActions, freshSession, liAtCookie } = req.body;
 
       if (!req.file) {
         return res.status(400).json({ error: 'Excel file is required.' });
@@ -341,7 +341,9 @@ function createApp(deps = {}) {
       });
 
       const sessionDir = path.join(process.cwd(), '.linkedin-session');
-      const shouldUseFreshSession = String(freshSession ?? 'true').toLowerCase() !== 'false';
+      const cookieValue = typeof liAtCookie === 'string' ? liAtCookie.trim() : '';
+      // Only wipe the session if using fresh-session mode AND no cookie provided
+      const shouldUseFreshSession = !cookieValue && String(freshSession ?? 'true').toLowerCase() !== 'false';
       if (shouldUseFreshSession && fsSync.existsSync(sessionDir)) {
         await fs.rm(sessionDir, { recursive: true, force: true });
       }
@@ -356,6 +358,7 @@ function createApp(deps = {}) {
         logFile,
         debugLogFile,
         artifactsDir,
+        liAtCookie: cookieValue || null,
         onResult: (result) => linkedinJobManager.appendResult(job.id, result)
       })
         .then(() => linkedinJobManager.finishJob(job.id))
