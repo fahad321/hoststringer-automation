@@ -1,5 +1,8 @@
 'use strict';
-// No browser required — all fetch-based (RSS, Reddit JSON API, DuckDuckGo HTML)
+// No browser required — all fetch-based (RSS, Reddit JSON API, Bing, DuckDuckGo HTML)
+// DDG: staffaug + RFP only (max ~6 queries/run)
+// Bing: Freelancer, PPH, Guru fallback, LinkedIn (separate rate-limiter)
+// RSS: Upwork Atom, Guru, We Work Remotely (no rate limit)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (base, spread = 600) => sleep(base + Math.random() * spread);
@@ -42,20 +45,19 @@ const IT_SIGNAL = /\b(software|developer|engineer|devops|cloud|api|app|applicati
 function isITRelevant(text) { return IT_SIGNAL.test(text); }
 
 function stripHtml(s) {
-  return s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+  return s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 function stripSuffix(title) {
   return title
-    .replace(/\s*[-–|]\s*(Upwork|Freelancer|PeoplePerHour|Guru|Toptal|Fiverr|LinkedIn|Reddit|Indeed|Seek|Glassdoor).*/i, '')
+    .replace(/\s*[-–|]\s*(Upwork|Freelancer|PeoplePerHour|Guru|Toptal|Fiverr|LinkedIn|Reddit|Indeed|Seek|Glassdoor|We Work Remotely).*/i, '')
     .replace(/\s*\|.*$/, '')
     .replace(/&amp;/g, '&').replace(/&#x27;/g, "'")
     .trim();
 }
 
-// ─── DuckDuckGo fetch (GET-based, no browser, global rate-limit) ──────────────
-// DDG rate-limits after ~3 rapid consecutive requests.
-// Strategy: GET (not POST), ≥3.2 s between all DDG calls, ≤3 queries per source.
+// ─── DuckDuckGo fetch (GET-based, global rate-limit) ──────────────────────────
+// Reserved for staffaug + RFP only — max ~6 queries per run
 
 const DDG_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -119,7 +121,69 @@ async function ddgMulti(queries, { filterFn, maxTotal = 20, maxQueries = 3 } = {
   return out;
 }
 
-function ddgToProject(r, platform, source, extra = {}) {
+// ─── Bing fetch (separate rate-limiter, higher concurrency) ──────────────────
+// Used for Freelancer, PPH, Guru fallback, LinkedIn — avoids DDG exhaustion
+
+const BING_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9'
+};
+
+let lastBingRequest = 0;
+
+async function bingFetch(query, max = 12) {
+  const results = [];
+  try {
+    const gap = Date.now() - lastBingRequest;
+    if (gap < 1500) await sleep(1500 - gap);
+    lastBingRequest = Date.now();
+
+    const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=20`;
+    const res = await fetch(url, { headers: BING_HEADERS });
+    if (!res.ok) return results;
+    const html = await res.text();
+
+    // Each organic result lives inside <li class="b_algo">
+    const itemRe = /<li[^>]+class="b_algo"[^>]*>([\s\S]*?)<\/li>/g;
+    let m;
+    while ((m = itemRe.exec(html)) !== null && results.length < max) {
+      const block = m[1];
+      // Primary link is always the first <a href> inside an <h2>
+      const h2M = /<h2[^>]*>[\s\S]*?<a[^>]+href="([^"#][^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
+      if (!h2M) continue;
+      const href = h2M[1];
+      if (!href || href.includes('bing.com') || href.includes('microsoft.com') || href.includes('msn.com')) continue;
+      const title = stripHtml(h2M[2]);
+      // Snippet is in a <p> element
+      const pM = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(block);
+      const snippet = pM ? stripHtml(pM[1]).slice(0, 400) : '';
+      results.push({ title, url: href, snippet });
+    }
+  } catch (_) {}
+  return results;
+}
+
+async function bingMulti(queries, { filterFn, maxTotal = 20, maxQueries = 3 } = {}) {
+  const seen = new Set();
+  const out = [];
+  let ran = 0;
+  for (const q of queries) {
+    if (out.length >= maxTotal || ran >= maxQueries) break;
+    const batch = await bingFetch(q, 12);
+    ran++;
+    for (const r of batch) {
+      if (out.length >= maxTotal) break;
+      if (!r.url || seen.has(r.url)) continue;
+      seen.add(r.url);
+      if (filterFn && !filterFn(r)) continue;
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+function webToProject(r, platform, source, extra = {}) {
   return {
     id: makeProjId(),
     title: stripSuffix(r.title) || 'IT Project',
@@ -149,12 +213,12 @@ function xmlAttr(xml, tag, attr) {
   return m ? m[1] : '';
 }
 
-// ─── 1. Upwork (Atom RSS feed + DDG fallback) ─────────────────────────────────
+// ─── 1. Upwork (Atom RSS feed + Bing fallback) ────────────────────────────────
 
 async function searchUpwork({ keywords, location, maxResults }) {
   const projects = [];
 
-  // Primary: Upwork public Atom job feed
+  // Primary: Upwork public Atom job feed (reliable, no rate limiting)
   try {
     const q = encodeURIComponent(keywords);
     const feedUrl = `https://www.upwork.com/ab/feed/jobs/atom?q=${q}&sort=recency&paging=0%3B25`;
@@ -194,64 +258,129 @@ async function searchUpwork({ keywords, location, maxResults }) {
     }
   } catch (_) {}
 
-  // Fallback: DDG site: search
+  // Fallback: Bing site: search (not DDG — save DDG for staffaug/rfp)
   if (projects.length < maxResults) {
     const queries = [
       `site:upwork.com/jobs "${keywords}" ${location || ''}`.trim(),
       `site:upwork.com/jobs "staff augmentation" OR "software development" ${location || ''}`.trim()
     ];
     const seen = new Set(projects.map((p) => p.listingUrl));
-    const results = await ddgMulti(queries, {
+    const results = await bingMulti(queries, {
       maxTotal: maxResults - projects.length, maxQueries: 2,
       filterFn: (r) => r.url.includes('upwork.com') && isITRelevant(r.title + ' ' + r.snippet)
     });
     for (const r of results) {
-      if (!seen.has(r.url)) projects.push(ddgToProject(r, 'Upwork', 'upwork', { location }));
+      if (!seen.has(r.url)) projects.push(webToProject(r, 'Upwork', 'upwork', { location }));
     }
   }
   return projects.slice(0, maxResults);
 }
 
-// ─── 2. Freelancer (DDG site: search) ────────────────────────────────────────
+// ─── 2. Freelancer (Bing site: search) ───────────────────────────────────────
+// Freelancer has no public RSS feed — Bing search is the reliable approach
 
 async function searchFreelancer({ keywords, location, maxResults }) {
+  const loc = location ? ` ${location}` : '';
   const queries = [
-    `site:freelancer.com/projects "${keywords}" ${location || ''}`.trim(),
-    `site:freelancer.com/projects "software development" OR "web application" ${location || ''}`.trim()
+    `site:freelancer.com/projects "${keywords}"${loc}`,
+    `site:freelancer.com/projects (software OR web OR mobile OR app OR api OR cloud)${loc}`,
+    `site:freelancer.com/projects "software development" OR "web developer"${loc}`
   ];
-  const results = await ddgMulti(queries, {
-    maxTotal: maxResults, maxQueries: 2,
+  const results = await bingMulti(queries, {
+    maxTotal: maxResults, maxQueries: 3,
     filterFn: (r) => /freelancer\.com\/(projects?|contest)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
   });
-  return results.map((r) => ddgToProject(r, 'Freelancer', 'freelancer', { location })).slice(0, maxResults);
+  return results.map((r) => webToProject(r, 'Freelancer', 'freelancer', { location })).slice(0, maxResults);
 }
 
-// ─── 3. PeoplePerHour (DDG site: search) ─────────────────────────────────────
+// ─── 3. PeoplePerHour (Bing site: search) ────────────────────────────────────
 
 async function searchPeoplePerHour({ keywords, maxResults }) {
   const queries = [
-    `site:peopleperhour.com "${keywords}"`,
-    `site:peopleperhour.com "software development" OR "web development" OR "mobile app"`
+    `site:peopleperhour.com/projects "${keywords}"`,
+    `site:peopleperhour.com/projects (software OR web OR mobile OR developer OR engineer)`,
+    `site:peopleperhour.com "looking for" (developer OR software OR web OR app)`
   ];
-  const results = await ddgMulti(queries, {
-    maxTotal: maxResults, maxQueries: 2,
+  const results = await bingMulti(queries, {
+    maxTotal: maxResults, maxQueries: 3,
     filterFn: (r) => r.url.includes('peopleperhour.com') && isITRelevant(r.title + ' ' + r.snippet)
   });
-  return results.map((r) => ddgToProject(r, 'PeoplePerHour', 'pph')).slice(0, maxResults);
+  return results.map((r) => webToProject(r, 'PeoplePerHour', 'pph')).slice(0, maxResults);
 }
 
-// ─── 4. Guru (DDG site: search) ──────────────────────────────────────────────
+// ─── 4. Guru (RSS feed primary + Bing fallback) ──────────────────────────────
 
 async function searchGuru({ keywords, maxResults }) {
-  const queries = [
-    `site:guru.com/d/jobs "${keywords}"`,
-    `site:guru.com/d/jobs "software development" OR "web development"`
+  const projects = [];
+
+  // Primary: Guru public RSS feed
+  const guruRssUrls = [
+    `https://www.guru.com/d/jobs/q/${encodeURIComponent(keywords)}/format/rss/`,
+    `https://www.guru.com/d/jobs/q/software-development/format/rss/`
   ];
-  const results = await ddgMulti(queries, {
-    maxTotal: maxResults, maxQueries: 2,
-    filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
-  });
-  return results.map((r) => ddgToProject(r, 'Guru', 'guru')).slice(0, maxResults);
+
+  for (const feedUrl of guruRssUrls) {
+    if (projects.length >= maxResults) break;
+    try {
+      const res = await fetch(feedUrl, {
+        headers: {
+          'User-Agent': DDG_HEADERS['User-Agent'],
+          'Accept': 'application/rss+xml,application/xml,text/xml,*/*'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
+
+      const itemRe = /<item>([\s\S]*?)<\/item>/g;
+      let m;
+      while ((m = itemRe.exec(xml)) !== null && projects.length < maxResults) {
+        const item = m[1];
+        const title = xmlTag(item, 'title');
+        // <link> in RSS is CDATA-wrapped text before </link>
+        const linkM = /<link[^>]*>\s*(?:<!\[CDATA\[)?(https?:\/\/[^\]<\s]+)/.exec(item);
+        const link = linkM ? linkM[1].trim() : '';
+        const description = xmlTag(item, 'description').slice(0, 400);
+        const pubDate = xmlTag(item, 'pubDate');
+        if (!title || !link) continue;
+        const text = title + ' ' + description;
+        if (!isITRelevant(text)) continue;
+        projects.push({
+          id: makeProjId(),
+          title: stripSuffix(title),
+          description,
+          platform: 'Guru',
+          budget: extractBudget(text),
+          skills: extractSkills(text),
+          postedAt: pubDate ? new Date(pubDate).toLocaleDateString() : '',
+          listingUrl: link,
+          contactName: '', location: '',
+          projectType: 'fixed',
+          source: 'guru'
+        });
+      }
+    } catch (_) {}
+  }
+
+  // Fallback: Bing site: search
+  if (projects.length < maxResults) {
+    const queries = [
+      `site:guru.com/d/jobs "${keywords}"`,
+      `site:guru.com/d/jobs (software OR web OR mobile OR developer OR engineer OR cloud)`,
+      `site:guru.com/d/jobs "software development" OR "web developer" OR "app development"`
+    ];
+    const seen = new Set(projects.map((p) => p.listingUrl));
+    const results = await bingMulti(queries, {
+      maxTotal: maxResults - projects.length, maxQueries: 3,
+      filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
+    });
+    for (const r of results) {
+      if (!seen.has(r.url)) projects.push(webToProject(r, 'Guru', 'guru'));
+    }
+  }
+
+  return projects.slice(0, maxResults);
 }
 
 // ─── 5. Reddit (fetch JSON API — no rate limiting) ────────────────────────────
@@ -259,7 +388,7 @@ async function searchGuru({ keywords, maxResults }) {
 async function searchReddit({ keywords, maxResults }) {
   const projects = [];
   const seen = new Set();
-  const subreddits = ['forhire', 'slavelabour', 'entrepreneur'];
+  const subreddits = ['forhire', 'slavelabour', 'entrepreneur', 'techjobs'];
 
   const headers = {
     'User-Agent': 'hoststringer-bot/1.0 (IT consultancy lead finder)',
@@ -310,27 +439,86 @@ async function searchReddit({ keywords, maxResults }) {
   return projects;
 }
 
-// ─── 6. LinkedIn contract jobs (DDG site: search) ────────────────────────────
+// ─── 6. LinkedIn contract jobs (Bing site: search) ────────────────────────────
 
 async function searchLinkedInContracts({ keywords, location, maxResults }) {
-  const loc = location || '';
+  const loc = location ? ` ${location}` : '';
   const queries = [
-    `site:linkedin.com/jobs "${keywords}" contract ${loc}`.trim(),
-    `site:linkedin.com/jobs "software developer" OR "engineer" contract ${loc}`.trim()
+    `site:linkedin.com/jobs "${keywords}" contract${loc}`,
+    `site:linkedin.com/jobs (software OR engineer OR developer) contract remote${loc}`,
+    `site:linkedin.com/jobs "staff augmentation" OR "contract developer"${loc}`
   ];
-  const results = await ddgMulti(queries, {
-    maxTotal: maxResults, maxQueries: 2,
+  const results = await bingMulti(queries, {
+    maxTotal: maxResults, maxQueries: 3,
     filterFn: (r) => r.url.includes('linkedin.com/jobs') && isITRelevant(r.title + ' ' + r.snippet)
   });
   return results.map((r) => ({
-    ...ddgToProject(r, 'LinkedIn', 'linkedin', { location, projectType: 'contract' }),
+    ...webToProject(r, 'LinkedIn', 'linkedin', { location, projectType: 'contract' }),
     projectType: 'contract'
   })).slice(0, maxResults);
 }
 
-// ─── 7. Staff augmentation deep web search ───────────────────────────────────
+// ─── 7. We Work Remotely (RSS feeds) ─────────────────────────────────────────
 
-// Exclude the freelance project marketplaces we search directly
+async function searchWeWorkRemotely({ keywords, maxResults }) {
+  const projects = [];
+  const seen = new Set();
+
+  const feeds = [
+    'https://weworkremotely.com/categories/remote-contract-jobs.rss',
+    'https://weworkremotely.com/categories/remote-programming-jobs.rss',
+    'https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss'
+  ];
+
+  const kwWords = keywords.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+
+  for (const feedUrl of feeds) {
+    if (projects.length >= maxResults) break;
+    try {
+      const res = await fetch(feedUrl, {
+        headers: { 'User-Agent': DDG_HEADERS['User-Agent'], 'Accept': 'application/rss+xml,*/*' },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const itemRe = /<item>([\s\S]*?)<\/item>/g;
+      let m;
+      while ((m = itemRe.exec(xml)) !== null && projects.length < maxResults) {
+        const item = m[1];
+        const title = xmlTag(item, 'title');
+        const linkM = /<link[^>]*>\s*(?:<!\[CDATA\[)?(https?:\/\/[^\]<\s]+)/.exec(item)
+          || /<link>(https?:\/\/[^<]+)<\/link>/i.exec(item);
+        const link = linkM ? linkM[1].trim() : xmlTag(item, 'link');
+        const description = xmlTag(item, 'description').slice(0, 400);
+        const pubDate = xmlTag(item, 'pubDate');
+        if (!title || !link || seen.has(link)) continue;
+        const text = title + ' ' + description;
+        if (!isITRelevant(text)) continue;
+        // Keyword relevance: at least one keyword word appears
+        if (kwWords.length > 0 && !kwWords.some((w) => text.toLowerCase().includes(w))) continue;
+        seen.add(link);
+        projects.push({
+          id: makeProjId(),
+          title: stripSuffix(title),
+          description,
+          platform: 'We Work Remotely',
+          budget: extractBudget(text),
+          skills: extractSkills(text),
+          postedAt: pubDate ? new Date(pubDate).toLocaleDateString() : '',
+          listingUrl: link,
+          contactName: '', location: 'Remote',
+          projectType: 'contract',
+          source: 'wwr'
+        });
+      }
+    } catch (_) {}
+  }
+  return projects.slice(0, maxResults);
+}
+
+// ─── 8. Staff augmentation deep web search (DDG) ─────────────────────────────
+// DDG is now free (freelance platforms use Bing) so we get full quota here
+
 const FREELANCE_DOMAINS = /\b(upwork\.com|freelancer\.com|guru\.com|peopleperhour\.com|fiverr\.com|toptal\.com|bark\.com|contra\.com)\b/i;
 
 async function searchStaffAugWeb({ keywords, location, maxResults }) {
@@ -360,7 +548,7 @@ async function searchStaffAugWeb({ keywords, location, maxResults }) {
   })).slice(0, maxResults);
 }
 
-// ─── 8. RFPs, Tenders & Government ───────────────────────────────────────────
+// ─── 9. RFPs, Tenders & Government (DDG) ─────────────────────────────────────
 
 const GOVT_RE = /\.gov\.au|\.gov\.uk|\.gov\.nz|\.gov\.sg|\.gov\.ca|\.gov\b|sam\.gov|tenders\.gov|austender|ted\.europa|find-tender\.service\.gov|sourceau/i;
 
@@ -422,51 +610,63 @@ async function runProjectSearch({
     onResult(proj);
   }
 
-  // Reddit first — no rate limiting, fast
+  // Reddit — JSON API, no rate limiting, runs first
   if (sources.includes('reddit') && !isCancelled()) {
     onProgress('Searching Reddit r/forhire for [HIRING] IT posts…');
     const results = await searchReddit({ keywords: searchKeywords, maxResults: maxPerSource });
     results.forEach(emit);
   }
 
-  // Upwork via RSS feed (fast, reliable) — no DDG quota used
+  // We Work Remotely — RSS, no rate limiting
+  if (sources.includes('wwr') && !isCancelled()) {
+    onProgress('Searching We Work Remotely contract jobs…');
+    const results = await searchWeWorkRemotely({ keywords: searchKeywords, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
+
+  // Upwork — RSS (primary) then Bing fallback
   if (sources.includes('upwork') && !isCancelled()) {
     onProgress('Searching Upwork job feed…');
     const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
     results.forEach(emit);
   }
 
-  // DDG-based sources — each respects the 3.2 s gap via shared lastDdgRequest
-  if (sources.includes('freelancer') && !isCancelled()) {
-    onProgress('Searching Freelancer.com listings…');
-    const results = await searchFreelancer({ keywords: searchKeywords, location, maxResults: maxPerSource });
-    results.forEach(emit);
-  }
-
-  if (sources.includes('pph') && !isCancelled()) {
-    onProgress('Searching PeoplePerHour listings…');
-    const results = await searchPeoplePerHour({ keywords: searchKeywords, maxResults: maxPerSource });
-    results.forEach(emit);
-  }
-
+  // Guru — RSS (primary) then Bing fallback
   if (sources.includes('guru') && !isCancelled()) {
     onProgress('Searching Guru.com listings…');
     const results = await searchGuru({ keywords: searchKeywords, maxResults: maxPerSource });
     results.forEach(emit);
   }
 
+  // Freelancer — Bing site: search (separate engine, no DDG conflict)
+  if (sources.includes('freelancer') && !isCancelled()) {
+    onProgress('Searching Freelancer.com listings…');
+    const results = await searchFreelancer({ keywords: searchKeywords, location, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
+
+  // PeoplePerHour — Bing site: search
+  if (sources.includes('pph') && !isCancelled()) {
+    onProgress('Searching PeoplePerHour listings…');
+    const results = await searchPeoplePerHour({ keywords: searchKeywords, maxResults: maxPerSource });
+    results.forEach(emit);
+  }
+
+  // LinkedIn — Bing site: search
   if (sources.includes('linkedin') && !isCancelled()) {
     onProgress('Searching LinkedIn contract jobs…');
     const results = await searchLinkedInContracts({ keywords: searchKeywords, location, maxResults: maxPerSource });
     results.forEach(emit);
   }
 
+  // Staff aug deep web — DDG (budget available now that freelance platforms use Bing)
   if (sources.includes('staffaug') && !isCancelled()) {
     onProgress('Deep web search — companies needing IT teams…');
     const results = await searchStaffAugWeb({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });
     results.forEach(emit);
   }
 
+  // RFPs & Government — DDG
   if (sources.includes('web') && !isCancelled()) {
     onProgress('Searching RFPs, government tenders & procurement…');
     const results = await searchRFPsAndTenders({ keywords: searchKeywords, location, maxResults: maxPerSource * 2 });

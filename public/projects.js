@@ -81,6 +81,7 @@ function platformBadge(platform) {
     : platform === 'Guru'                     ? 'badge-guru'
     : /Reddit/i.test(platform)               ? 'badge-reddit'
     : platform === 'LinkedIn'                 ? 'badge-linkedin'
+    : platform === 'We Work Remotely'         ? 'badge-wwr'
     : platform === 'Government Tender'        ? 'badge-government'
     : 'badge-web';
   return `<span class="platform-badge ${cls}">${esc(platform)}</span>`;
