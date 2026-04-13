@@ -1878,6 +1878,17 @@ async function processProfile({
   return result;
 }
 
+async function autoLogin(page, { email, password }) {
+  await page.goto('https://www.linkedin.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(1500);
+  await page.fill('#username', email);
+  await page.waitForTimeout(600);
+  await page.fill('#password', password);
+  await page.waitForTimeout(600);
+  await page.click('[data-litms-control-urn="login-submit"], [type="submit"]');
+  await page.waitForTimeout(3000);
+}
+
 async function runLinkedinConnectCampaign({
   leads,
   connectTemplate,
@@ -1888,7 +1899,8 @@ async function runLinkedinConnectCampaign({
   logFile,
   debugLogFile = null,
   artifactsDir = null,
-  liAtCookie = null,
+  liEmail = null,
+  liPassword = null,
   onResult
 }) {
   const isContextClosedError = (error) => /Target page, context or browser has been closed/i.test(
@@ -1901,7 +1913,7 @@ async function runLinkedinConnectCampaign({
   }
 
   await ensureChromium();
-  const isHeadless = !!(liAtCookie || process.env.RENDER || process.env.NODE_ENV === 'production');
+  const isHeadless = !!(liEmail || process.env.RENDER || process.env.NODE_ENV === 'production');
   const context = await chromium.launchPersistentContext(sessionDir, {
     headless: isHeadless,
     viewport: isHeadless ? { width: 1280, height: 800 } : null,
@@ -1914,43 +1926,27 @@ async function runLinkedinConnectCampaign({
     ...(isHeadless ? {} : { channel: 'chrome' })
   });
 
-  // Inject li_at cookie before navigating so LinkedIn sees us as logged in
-  if (liAtCookie) {
-    await context.addCookies([{
-      name: 'li_at',
-      value: liAtCookie,
-      domain: '.linkedin.com',
-      path: '/',
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None'
-    }]);
-  }
-
   try {
     const page = context.pages()[0] || (await context.newPage());
+
+    // Navigate to feed — if session is saved from a previous run this works immediately
     await page.goto('https://www.linkedin.com/feed/', {
       waitUntil: 'domcontentloaded',
       timeout: 45000
     });
+    await page.waitForTimeout(2000);
 
-    if (liAtCookie) {
-      // Give LinkedIn's JS redirects time to settle before checking the URL
-      await page.waitForTimeout(3000);
-      const url = page.url();
-      if (!isLinkedinAuthenticated(url)) {
-        // Try once more after another wait — sometimes LinkedIn is slow
-        await page.waitForTimeout(3000);
-        const url2 = page.url();
-        if (!isLinkedinAuthenticated(url2)) {
-          throw new Error(
-            `LinkedIn cookie (li_at) is invalid or expired (landed on: ${url2}). ` +
-            'Get a fresh cookie: Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
-          );
-        }
+    if (!isLinkedinAuthenticated(page.url())) {
+      if (liEmail && liPassword) {
+        // Auto-login with credentials
+        await autoLogin(page, { email: liEmail, password: liPassword });
+        // Now wait for login + any email/SMS verification (up to 3 min)
+        // If LinkedIn sends a verification email, user clicks link → auto-redirects
+        await waitForLinkedinLogin(page, 180000);
+      } else {
+        // Local mode: wait for user to log in manually in the browser window
+        await waitForLinkedinLogin(page);
       }
-    } else {
-      await waitForLinkedinLogin(page);
     }
 
     const cappedLeads = leads.slice(0, maxActions);

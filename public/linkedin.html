@@ -130,33 +130,28 @@
           </div>
         </div>
 
-        <!-- ── Step 4: LinkedIn Cookie ───────────────── -->
+        <!-- ── Step 4: LinkedIn Credentials ────────────── -->
         <div class="card">
           <div class="card-header">
             <div class="step-badge">4</div>
             <div class="card-header-text">
-              <h2>LinkedIn Session Cookie</h2>
-              <p>Required when running on the cloud — bypasses the browser login window</p>
+              <h2>LinkedIn Login</h2>
+              <p>Enter your LinkedIn credentials — the app logs in automatically</p>
             </div>
           </div>
           <div class="card-body">
-            <label class="field field-full">
-              <span class="field-label">
-                <code>li_at</code> cookie value
-                <span class="field-optional">leave blank to use browser login (local only)</span>
-              </span>
-              <input
-                type="password"
-                name="liAtCookie"
-                id="liAtCookie"
-                placeholder="Paste your li_at cookie value here…"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">LinkedIn Email</span>
+                <input type="email" name="liEmail" id="liEmail" placeholder="you@example.com" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">LinkedIn Password</span>
+                <input type="password" name="liPassword" id="liPassword" placeholder="Your LinkedIn password" autocomplete="new-password" />
+              </label>
+            </div>
             <p class="hint">
-              How to get it: open LinkedIn in Chrome → F12 → Application tab → Cookies → https://www.linkedin.com → find <strong>li_at</strong> → copy the Value.
-              This cookie gives full account access — treat it like a password and do not share it.
+              Credentials are used only to log in and are never stored. If LinkedIn sends a verification email, click the link in your inbox — the automation will continue automatically.
             </p>
           </div>
         </div>

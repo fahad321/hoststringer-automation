@@ -75,8 +75,9 @@ function saveFormState() {
     dmTemplate: form.dmTemplate.value,
     delayMs: form.delayMs.value,
     maxActions: form.maxActions.value,
-    freshSession: form.freshSession.value
-    // li_at cookie intentionally NOT saved to localStorage for security
+    freshSession: form.freshSession.value,
+    liEmail: document.getElementById('liEmail').value
+    // password intentionally NOT saved
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
@@ -92,6 +93,7 @@ function restoreFormState() {
     if (data.delayMs) form.delayMs.value = data.delayMs;
     if (data.maxActions) form.maxActions.value = data.maxActions;
     if (data.freshSession) form.freshSession.value = data.freshSession;
+    if (data.liEmail) document.getElementById('liEmail').value = data.liEmail;
   } catch (_error) {
     localStorage.removeItem(STORAGE_KEY);
   }
@@ -208,8 +210,10 @@ function buildLinkedinFormData(file) {
   formData.append('delayMs', form.delayMs.value);
   formData.append('maxActions', form.maxActions.value);
   formData.append('freshSession', form.freshSession.value);
-  const cookie = document.getElementById('liAtCookie').value.trim();
-  if (cookie) formData.append('liAtCookie', cookie);
+  const email = document.getElementById('liEmail').value.trim();
+  const password = document.getElementById('liPassword').value;
+  if (email) formData.append('liEmail', email);
+  if (password) formData.append('liPassword', password);
   return formData;
 }
 
@@ -264,13 +268,11 @@ form.addEventListener('submit', async (event) => {
       throw new Error('Please upload an Excel file first.');
     }
 
-    const cookie = document.getElementById('liAtCookie').value.trim();
     const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    if (isCloud && !cookie) {
-      throw new Error(
-        'Step 4 required: paste your li_at cookie before starting. ' +
-        'Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
-      );
+    const email = document.getElementById('liEmail').value.trim();
+    const password = document.getElementById('liPassword').value;
+    if (isCloud && (!email || !password)) {
+      throw new Error('Step 4 required: enter your LinkedIn email and password before starting.');
     }
 
     const formData = buildLinkedinFormData(file);

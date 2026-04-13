@@ -304,7 +304,7 @@ function createApp(deps = {}) {
 
   app.post('/api/linkedin/start', upload.single('leadsFile'), async (req, res) => {
     try {
-      const { connectTemplate, dmTemplate, delayMs, maxActions, freshSession, liAtCookie } = req.body;
+      const { connectTemplate, dmTemplate, delayMs, maxActions, freshSession, liEmail, liPassword } = req.body;
 
       if (!req.file) {
         return res.status(400).json({ error: 'Excel file is required.' });
@@ -341,14 +341,14 @@ function createApp(deps = {}) {
       });
 
       const sessionDir = path.join(process.cwd(), '.linkedin-session');
-      const cookieValue = typeof liAtCookie === 'string' ? liAtCookie.trim() : '';
+      const emailValue = typeof liEmail === 'string' ? liEmail.trim() : '';
+      const passwordValue = typeof liPassword === 'string' ? liPassword : '';
 
-      // On cloud/Render a browser login window is impossible — reject fast
+      // On cloud a browser window is impossible without credentials — reject fast
       const isCloud = !!(process.env.RENDER || process.env.NODE_ENV === 'production');
-      if (isCloud && !cookieValue) {
+      if (isCloud && (!emailValue || !passwordValue)) {
         linkedinJobManager.finishJob(job.id, new Error(
-          'li_at session cookie is required on cloud deployments. ' +
-          'Fill in Step 4: Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
+          'LinkedIn email and password are required in Step 4 when running on the cloud.'
         ));
         return res.json({
           jobId: job.id,
@@ -361,8 +361,7 @@ function createApp(deps = {}) {
         });
       }
 
-      // Only wipe the session if using fresh-session mode AND no cookie provided
-      const shouldUseFreshSession = !cookieValue && String(freshSession ?? 'true').toLowerCase() !== 'false';
+      const shouldUseFreshSession = String(freshSession ?? 'true').toLowerCase() !== 'false';
       if (shouldUseFreshSession && fsSync.existsSync(sessionDir)) {
         await fs.rm(sessionDir, { recursive: true, force: true });
       }
@@ -377,7 +376,8 @@ function createApp(deps = {}) {
         logFile,
         debugLogFile,
         artifactsDir,
-        liAtCookie: cookieValue || null,
+        liEmail: emailValue || null,
+        liPassword: passwordValue || null,
         onResult: (result) => linkedinJobManager.appendResult(job.id, result)
       })
         .then(() => linkedinJobManager.finishJob(job.id))
