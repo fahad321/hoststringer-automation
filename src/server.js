@@ -502,9 +502,19 @@ function createApp(deps = {}) {
 
   app.post('/api/projects/search', async (req, res) => {
     try {
-      const { keywords, location, resourceType, sources, maxPerSource } = req.body;
+      const {
+        keywords, location, resourceType, sources, maxPerSource,
+        upworkEmail, upworkPassword, fiverrEmail, fiverrPassword
+      } = req.body;
       const sourcesArr = Array.isArray(sources) ? sources : ['upwork', 'freelancer', 'web'];
       const safeMax = Math.min(30, Math.max(5, Number(maxPerSource) || 10));
+
+      const credentials = {
+        upworkEmail:    typeof upworkEmail    === 'string' ? upworkEmail.trim()    : '',
+        upworkPassword: typeof upworkPassword === 'string' ? upworkPassword        : '',
+        fiverrEmail:    typeof fiverrEmail    === 'string' ? fiverrEmail.trim()    : '',
+        fiverrPassword: typeof fiverrPassword === 'string' ? fiverrPassword        : ''
+      };
 
       const job = projectJobManager.createJob({
         sources: sourcesArr,
@@ -517,6 +527,7 @@ function createApp(deps = {}) {
       runProjectSearch({
         keywords, location, resourceType,
         sources: sourcesArr, maxPerSource: safeMax,
+        credentials,
         signal: abortController.signal,
         onProgress: (phase) => projectJobManager.setPhase(job.id, phase),
         onResult: (project) => projectJobManager.appendResult(job.id, project)

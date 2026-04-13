@@ -82,6 +82,7 @@ function platformBadge(platform) {
     : /Reddit/i.test(platform)               ? 'badge-reddit'
     : platform === 'LinkedIn'                 ? 'badge-linkedin'
     : platform === 'We Work Remotely'         ? 'badge-wwr'
+    : platform === 'Fiverr Requests'          ? 'badge-fiverr'
     : platform === 'Government Tender'        ? 'badge-government'
     : 'badge-web';
   return `<span class="platform-badge ${cls}">${esc(platform)}</span>`;
@@ -235,11 +236,15 @@ form.addEventListener('submit', async (e) => {
 
   try {
     const body = {
-      keywords:     form.keywords.value.trim(),
-      location:     form.location.value.trim(),
-      resourceType: form.resourceType.value,
-      maxPerSource: form.maxPerSource.value,
-      sources
+      keywords:       form.keywords.value.trim(),
+      location:       form.location.value.trim(),
+      resourceType:   form.resourceType.value,
+      maxPerSource:   form.maxPerSource.value,
+      sources,
+      upworkEmail:    (document.getElementById('upworkEmail')?.value || '').trim(),
+      upworkPassword: document.getElementById('upworkPassword')?.value || '',
+      fiverrEmail:    (document.getElementById('fiverrEmail')?.value || '').trim(),
+      fiverrPassword: document.getElementById('fiverrPassword')?.value || ''
     };
 
     const result = await callApi('/api/projects/search', {

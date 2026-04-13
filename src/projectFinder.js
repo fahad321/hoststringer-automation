@@ -588,6 +588,7 @@ async function searchRFPsAndTenders({ keywords, location, maxResults }) {
 
 async function runProjectSearch({
   keywords, location, resourceType, sources, maxPerSource,
+  credentials = {},
   onProgress, onResult, signal
 }) {
   const isCancelled = () => signal?.aborted === true;
@@ -624,11 +625,34 @@ async function runProjectSearch({
     results.forEach(emit);
   }
 
-  // Upwork — RSS (primary) then Bing fallback
+  // Upwork — authenticated (if credentials given) OR RSS + Bing fallback
   if (sources.includes('upwork') && !isCancelled()) {
-    onProgress('Searching Upwork job feed…');
-    const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
-    results.forEach(emit);
+    if (credentials.upworkEmail && credentials.upworkPassword) {
+      onProgress('Searching Upwork (authenticated — more results)…');
+      try {
+        const { scrapeUpworkAuth } = require('./platformScraper');
+        const authResults = await scrapeUpworkAuth({
+          email: credentials.upworkEmail,
+          password: credentials.upworkPassword,
+          keywords: searchKeywords, location,
+          maxResults: maxPerSource * 2
+        });
+        authResults.forEach(emit);
+        if (authResults.length === 0) {
+          // Auth worked but no results — still run RSS as supplement
+          const rssResults = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
+          rssResults.forEach(emit);
+        }
+      } catch (err) {
+        onProgress(`Upwork auth failed (${err.message}) — falling back to RSS feed…`);
+        const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
+        results.forEach(emit);
+      }
+    } else {
+      onProgress('Searching Upwork job feed…');
+      const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
+      results.forEach(emit);
+    }
   }
 
   // Guru — RSS (primary) then Bing fallback
@@ -657,6 +681,27 @@ async function runProjectSearch({
     onProgress('Searching LinkedIn contract jobs…');
     const results = await searchLinkedInContracts({ keywords: searchKeywords, location, maxResults: maxPerSource });
     results.forEach(emit);
+  }
+
+  // Fiverr buyer requests — requires credentials (clients post what they need)
+  if (sources.includes('fiverr') && !isCancelled()) {
+    if (credentials.fiverrEmail && credentials.fiverrPassword) {
+      onProgress('Scraping Fiverr buyer requests (authenticated)…');
+      try {
+        const { scrapeFiverrRequests } = require('./platformScraper');
+        const results = await scrapeFiverrRequests({
+          email: credentials.fiverrEmail,
+          password: credentials.fiverrPassword,
+          keywords: searchKeywords,
+          maxResults: maxPerSource
+        });
+        results.forEach(emit);
+      } catch (err) {
+        onProgress(`Fiverr scraping failed: ${err.message}`);
+      }
+    } else {
+      onProgress('Fiverr: no credentials provided — enter email & password in Step 3 to enable.');
+    }
   }
 
   // Staff aug deep web — DDG (budget available now that freelance platforms use Bing)

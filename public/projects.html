@@ -158,7 +158,19 @@
       .badge-linkedin   { background: #e8f0fe; color: #1a56b6; }
       .badge-government { background: #fee2e2; color: #991b1b; }
       .badge-wwr        { background: #ecfdf5; color: #065f46; }
+      .badge-fiverr     { background: #f0fdf4; color: #166534; }
       .badge-web        { background: var(--zinc-100); color: var(--zinc-600); }
+
+      .creds-note {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 10px;
+        padding: 8px 12px;
+        background: var(--zinc-50);
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        line-height: 1.5;
+      }
 
       /* Budget chip */
       .budget-chip {
@@ -313,7 +325,7 @@
             </div>
           </div>
           <div class="card-body">
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Freelance platforms — direct scrape + multiple keyword variations each</p>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Freelance platforms — RSS feeds &amp; web search</p>
             <div class="source-grid">
               <label class="source-option">
                 <input type="checkbox" name="sources" value="upwork" checked />
@@ -330,6 +342,10 @@
               <label class="source-option">
                 <input type="checkbox" name="sources" value="guru" checked />
                 <span>Guru.com</span>
+              </label>
+              <label class="source-option">
+                <input type="checkbox" name="sources" value="fiverr" />
+                <span>Fiverr Requests <span style="font-weight:400;font-size:11px;color:var(--text-muted)">(login req.)</span></span>
               </label>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin:14px 0 10px;">Broader channels — RSS feeds &amp; deep web search</p>
@@ -355,6 +371,50 @@
                 <span>RFPs &amp; Tenders</span>
               </label>
             </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Platform Credentials (optional) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="step-badge">3</div>
+            <div class="card-header-text">
+              <h2>Platform Credentials <span style="font-size:13px;font-weight:400;color:var(--text-muted)">(optional)</span></h2>
+              <p>Log in to Upwork and Fiverr for deeper, authenticated searches</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="section-label">Upwork</p>
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">Upwork Email</span>
+                <input type="email" id="upworkEmail" name="upworkEmail" placeholder="you@example.com" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">Upwork Password</span>
+                <input type="password" id="upworkPassword" name="upworkPassword" placeholder="Your Upwork password" autocomplete="new-password" />
+              </label>
+            </div>
+
+            <hr class="card-divider" />
+
+            <p class="section-label">Fiverr</p>
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">Fiverr Email</span>
+                <input type="email" id="fiverrEmail" name="fiverrEmail" placeholder="you@example.com" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">Fiverr Password</span>
+                <input type="password" id="fiverrPassword" name="fiverrPassword" placeholder="Your Fiverr password" autocomplete="new-password" />
+              </label>
+            </div>
+
+            <p class="creds-note">
+              <strong>Upwork:</strong> with credentials the app logs in automatically and searches authenticated job listings (more results, better detail).<br>
+              <strong>Fiverr Requests:</strong> clients post project briefs in the Buyer Requests section — only visible to logged-in sellers. Tick "Fiverr Requests" above and enter your seller account credentials.<br>
+              Credentials are sent only to this server and never stored or logged.
+            </p>
           </div>
         </div>
 
@@ -400,6 +460,7 @@
               <option value="Reddit r/forhire">Reddit</option>
               <option value="Reddit">Reddit (other)</option>
               <option value="We Work Remotely">We Work Remotely</option>
+              <option value="Fiverr Requests">Fiverr Requests</option>
               <option value="LinkedIn">LinkedIn</option>
               <option value="Government Tender">Government Tender</option>
               <option value="Web RFP">Web RFP</option>
