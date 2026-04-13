@@ -268,13 +268,6 @@ form.addEventListener('submit', async (event) => {
       throw new Error('Please upload an Excel file first.');
     }
 
-    const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    const email = document.getElementById('liEmail').value.trim();
-    const password = document.getElementById('liPassword').value;
-    if (isCloud && (!email || !password)) {
-      throw new Error('Step 4 required: enter your LinkedIn email and password before starting.');
-    }
-
     const formData = buildLinkedinFormData(file);
 
     setStatusMessage('Starting LinkedIn automation job...');
