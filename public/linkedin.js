@@ -264,6 +264,15 @@ form.addEventListener('submit', async (event) => {
       throw new Error('Please upload an Excel file first.');
     }
 
+    const cookie = document.getElementById('liAtCookie').value.trim();
+    const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    if (isCloud && !cookie) {
+      throw new Error(
+        'Step 4 required: paste your li_at cookie before starting. ' +
+        'Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
+      );
+    }
+
     const formData = buildLinkedinFormData(file);
 
     setStatusMessage('Starting LinkedIn automation job...');

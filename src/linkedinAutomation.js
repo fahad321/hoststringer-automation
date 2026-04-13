@@ -1935,13 +1935,19 @@ async function runLinkedinConnectCampaign({
     });
 
     if (liAtCookie) {
-      // With a cookie, we should already be on the feed — verify quickly
+      // Give LinkedIn's JS redirects time to settle before checking the URL
+      await page.waitForTimeout(3000);
       const url = page.url();
       if (!isLinkedinAuthenticated(url)) {
-        throw new Error(
-          'LinkedIn cookie (li_at) is invalid or expired. ' +
-          'Please get a fresh cookie: Chrome → F12 → Application → Cookies → linkedin.com → li_at → Value.'
-        );
+        // Try once more after another wait — sometimes LinkedIn is slow
+        await page.waitForTimeout(3000);
+        const url2 = page.url();
+        if (!isLinkedinAuthenticated(url2)) {
+          throw new Error(
+            `LinkedIn cookie (li_at) is invalid or expired (landed on: ${url2}). ` +
+            'Get a fresh cookie: Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
+          );
+        }
       }
     } else {
       await waitForLinkedinLogin(page);

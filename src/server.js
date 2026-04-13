@@ -342,6 +342,25 @@ function createApp(deps = {}) {
 
       const sessionDir = path.join(process.cwd(), '.linkedin-session');
       const cookieValue = typeof liAtCookie === 'string' ? liAtCookie.trim() : '';
+
+      // On cloud/Render a browser login window is impossible — reject fast
+      const isCloud = !!(process.env.RENDER || process.env.NODE_ENV === 'production');
+      if (isCloud && !cookieValue) {
+        linkedinJobManager.finishJob(job.id, new Error(
+          'li_at session cookie is required on cloud deployments. ' +
+          'Fill in Step 4: Chrome → F12 → Application → Cookies → linkedin.com → li_at → copy Value.'
+        ));
+        return res.json({
+          jobId: job.id,
+          totalProfiles: leads.length,
+          cappedTo: safeMaxActions,
+          delayMs: safeDelayMs,
+          logFile,
+          debugLogFile,
+          artifactsDir
+        });
+      }
+
       // Only wipe the session if using fresh-session mode AND no cookie provided
       const shouldUseFreshSession = !cookieValue && String(freshSession ?? 'true').toLowerCase() !== 'false';
       if (shouldUseFreshSession && fsSync.existsSync(sessionDir)) {
