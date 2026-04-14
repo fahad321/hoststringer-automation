@@ -82,6 +82,8 @@ function platformBadge(platform) {
     : /Reddit/i.test(platform)               ? 'badge-reddit'
     : platform === 'LinkedIn'                 ? 'badge-linkedin'
     : platform === 'We Work Remotely'         ? 'badge-wwr'
+    : platform === 'Remotive'                 ? 'badge-remotive'
+    : platform === 'RemoteOK'                 ? 'badge-remoteok'
     : platform === 'Fiverr Requests'          ? 'badge-fiverr'
     : platform === 'Government Tender'        ? 'badge-government'
     : 'badge-web';

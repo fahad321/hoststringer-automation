@@ -213,66 +213,120 @@ function xmlAttr(xml, tag, attr) {
   return m ? m[1] : '';
 }
 
-// ─── 1. Upwork (Atom RSS feed + Bing fallback) ────────────────────────────────
+// ─── 1. Upwork / Remotive / RemoteOK ─────────────────────────────────────────
+// Upwork's public Atom RSS feed was deprecated (HTTP 410 Gone).
+// The no-auth fallback now uses two reliable free APIs instead.
+// Authenticated Upwork scraping (with credentials) is handled in the orchestrator.
+
+function stripHtmlTags(s) {
+  return String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+}
 
 async function searchUpwork({ keywords, location, maxResults }) {
   const projects = [];
+  const seen = new Set();
+  const kwWords = keywords.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
 
-  // Primary: Upwork public Atom job feed (reliable, no rate limiting)
+  function kwMatch(text) {
+    if (!kwWords.length) return true;
+    const lower = text.toLowerCase();
+    return kwWords.some((w) => lower.includes(w));
+  }
+
+  // IT-only categories for Remotive (their ?category param is unreliable)
+  const REMOTIVE_IT_CATS = /software development|devops|sysadmin|data|design|product|qa|cybersecurity|blockchain|it management/i;
+  // Each sub-API gets half the quota so both contribute results
+  const halfMax = Math.ceil(maxResults / 2);
+
+  // Primary 1: Remotive API — free, reliable IT remote jobs
   try {
-    const q = encodeURIComponent(keywords);
-    const feedUrl = `https://www.upwork.com/ab/feed/jobs/atom?q=${q}&sort=recency&paging=0%3B25`;
-    const res = await fetch(feedUrl, {
-      headers: {
-        'User-Agent': DDG_HEADERS['User-Agent'],
-        'Accept': 'application/atom+xml,application/xml,text/xml,*/*'
-      }
+    const res = await fetch('https://remotive.com/api/remote-jobs?category=software-dev&limit=50', {
+      headers: { 'User-Agent': 'hoststringer/1.0', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000)
     });
     if (res.ok) {
-      const xml = await res.text();
-      const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
-      let m;
-      while ((m = entryRe.exec(xml)) !== null && projects.length < maxResults) {
-        const entry = m[1];
-        const title = xmlTag(entry, 'title');
-        const link = xmlAttr(entry, 'link', 'href') || xmlTag(entry, 'id');
-        const summary = xmlTag(entry, 'summary').slice(0, 400);
-        const updated = xmlTag(entry, 'updated');
-        if (!title || !link) continue;
-        const text = title + ' ' + summary;
+      const data = await res.json();
+      let added = 0;
+      for (const job of (data?.jobs || [])) {
+        if (added >= halfMax) break;
+        if (!job.url || seen.has(job.url)) continue;
+        // Category must be IT-related (API sometimes returns non-IT categories)
+        if (!REMOTIVE_IT_CATS.test(job.category || '')) continue;
+        const text = `${job.title} ${stripHtmlTags(job.description || '')} ${(job.tags || []).join(' ')}`;
         if (!isITRelevant(text)) continue;
+        seen.add(job.url);
+        added++;
         projects.push({
           id: makeProjId(),
-          title: stripSuffix(title),
-          description: summary,
-          platform: 'Upwork',
-          budget: extractBudget(text),
+          title: job.title || '',
+          description: stripHtmlTags(job.description || '').slice(0, 400),
+          platform: 'Remotive',
+          budget: '',
           skills: extractSkills(text),
-          postedAt: updated ? new Date(updated).toLocaleDateString() : '',
-          listingUrl: link,
-          contactName: '', location: location || '',
-          projectType: summary.toLowerCase().includes('/hr') ? 'hourly' : 'fixed',
-          source: 'upwork'
+          postedAt: job.publication_date ? new Date(job.publication_date).toLocaleDateString() : '',
+          listingUrl: job.url,
+          contactName: job.company_name || '',
+          location: 'Remote',
+          projectType: /contract|freelance/i.test(job.job_type || '') ? 'contract' : 'fixed',
+          source: 'remotive'
         });
       }
     }
   } catch (_) {}
 
-  // Fallback: Bing site: search (not DDG — save DDG for staffaug/rfp)
+  // Primary 2: RemoteOK API — free, dev-tagged jobs (already filtered to dev roles)
+  try {
+    const res = await fetch('https://remoteok.com/api?tag=dev', {
+      headers: { 'User-Agent': 'hoststringer/1.0', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const jobs = Array.isArray(data) ? data.filter((j) => j.id && j.url) : [];
+      let added = 0;
+      for (const job of jobs) {
+        if (added >= halfMax) break;
+        if (seen.has(job.url)) continue;
+        // tag=dev already filters to dev roles; verify IT signal on title+tags
+        const titleTags = `${job.position || ''} ${(job.tags || []).join(' ')}`;
+        if (!isITRelevant(titleTags)) continue;
+        seen.add(job.url);
+        added++;
+        projects.push({
+          id: makeProjId(),
+          title: job.position || '',
+          description: stripHtmlTags(job.description || '').slice(0, 400),
+          platform: 'RemoteOK',
+          budget: job.salary_min ? `$${job.salary_min}–$${job.salary_max || '?'}` : '',
+          skills: extractSkills((job.tags || []).join(' ') + ' ' + stripHtmlTags(job.description || '')),
+          postedAt: job.date ? new Date(job.date).toLocaleDateString() : '',  // already ISO string
+          listingUrl: job.url,
+          contactName: job.company || '',
+          location: 'Remote',
+          projectType: 'contract',
+          source: 'remoteok'
+        });
+      }
+    }
+  } catch (_) {}
+
+  // Supplemental: Bing site:upwork.com/jobs (works when Bing quota is available)
   if (projects.length < maxResults) {
+    const loc = location || '';
     const queries = [
-      `site:upwork.com/jobs "${keywords}" ${location || ''}`.trim(),
-      `site:upwork.com/jobs "staff augmentation" OR "software development" ${location || ''}`.trim()
+      `site:upwork.com/jobs "${keywords}" ${loc}`.trim(),
+      `site:upwork.com/jobs "software development" OR "staff augmentation" ${loc}`.trim()
     ];
-    const seen = new Set(projects.map((p) => p.listingUrl));
+    const bingSeen = new Set(projects.map((p) => p.listingUrl));
     const results = await bingMulti(queries, {
       maxTotal: maxResults - projects.length, maxQueries: 2,
       filterFn: (r) => r.url.includes('upwork.com') && isITRelevant(r.title + ' ' + r.snippet)
     });
     for (const r of results) {
-      if (!seen.has(r.url)) projects.push(webToProject(r, 'Upwork', 'upwork', { location }));
+      if (!bingSeen.has(r.url)) projects.push(webToProject(r, 'Upwork', 'upwork', { location }));
     }
   }
+
   return projects.slice(0, maxResults);
 }
 
@@ -308,79 +362,21 @@ async function searchPeoplePerHour({ keywords, maxResults }) {
   return results.map((r) => webToProject(r, 'PeoplePerHour', 'pph')).slice(0, maxResults);
 }
 
-// ─── 4. Guru (RSS feed primary + Bing fallback) ──────────────────────────────
+// ─── 4. Guru (Bing site: search) ─────────────────────────────────────────────
+// Guru removed their public RSS feed (all URL formats return 404).
+// Bing site: search is the reliable no-auth approach.
 
 async function searchGuru({ keywords, maxResults }) {
-  const projects = [];
-
-  // Primary: Guru public RSS feed
-  const guruRssUrls = [
-    `https://www.guru.com/d/jobs/q/${encodeURIComponent(keywords)}/format/rss/`,
-    `https://www.guru.com/d/jobs/q/software-development/format/rss/`
+  const queries = [
+    `site:guru.com/d/jobs "${keywords}"`,
+    `site:guru.com/d/jobs (software OR web OR mobile OR developer OR engineer OR cloud)`,
+    `site:guru.com/d/jobs "software development" OR "web developer" OR "app development"`
   ];
-
-  for (const feedUrl of guruRssUrls) {
-    if (projects.length >= maxResults) break;
-    try {
-      const res = await fetch(feedUrl, {
-        headers: {
-          'User-Agent': DDG_HEADERS['User-Agent'],
-          'Accept': 'application/rss+xml,application/xml,text/xml,*/*'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (!res.ok) continue;
-      const xml = await res.text();
-      if (!xml.includes('<item>') && !xml.includes('<entry>')) continue;
-
-      const itemRe = /<item>([\s\S]*?)<\/item>/g;
-      let m;
-      while ((m = itemRe.exec(xml)) !== null && projects.length < maxResults) {
-        const item = m[1];
-        const title = xmlTag(item, 'title');
-        // <link> in RSS is CDATA-wrapped text before </link>
-        const linkM = /<link[^>]*>\s*(?:<!\[CDATA\[)?(https?:\/\/[^\]<\s]+)/.exec(item);
-        const link = linkM ? linkM[1].trim() : '';
-        const description = xmlTag(item, 'description').slice(0, 400);
-        const pubDate = xmlTag(item, 'pubDate');
-        if (!title || !link) continue;
-        const text = title + ' ' + description;
-        if (!isITRelevant(text)) continue;
-        projects.push({
-          id: makeProjId(),
-          title: stripSuffix(title),
-          description,
-          platform: 'Guru',
-          budget: extractBudget(text),
-          skills: extractSkills(text),
-          postedAt: pubDate ? new Date(pubDate).toLocaleDateString() : '',
-          listingUrl: link,
-          contactName: '', location: '',
-          projectType: 'fixed',
-          source: 'guru'
-        });
-      }
-    } catch (_) {}
-  }
-
-  // Fallback: Bing site: search
-  if (projects.length < maxResults) {
-    const queries = [
-      `site:guru.com/d/jobs "${keywords}"`,
-      `site:guru.com/d/jobs (software OR web OR mobile OR developer OR engineer OR cloud)`,
-      `site:guru.com/d/jobs "software development" OR "web developer" OR "app development"`
-    ];
-    const seen = new Set(projects.map((p) => p.listingUrl));
-    const results = await bingMulti(queries, {
-      maxTotal: maxResults - projects.length, maxQueries: 3,
-      filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
-    });
-    for (const r of results) {
-      if (!seen.has(r.url)) projects.push(webToProject(r, 'Guru', 'guru'));
-    }
-  }
-
-  return projects.slice(0, maxResults);
+  const results = await bingMulti(queries, {
+    maxTotal: maxResults, maxQueries: 3,
+    filterFn: (r) => /guru\.com\/(d\/jobs|job)/.test(r.url) && isITRelevant(r.title + ' ' + r.snippet)
+  });
+  return results.map((r) => webToProject(r, 'Guru', 'guru')).slice(0, maxResults);
 }
 
 // ─── 5. Reddit (fetch JSON API — no rate limiting) ────────────────────────────
