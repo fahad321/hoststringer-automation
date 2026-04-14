@@ -504,12 +504,18 @@ function createApp(deps = {}) {
     try {
       const {
         keywords, location, resourceType, sources, maxPerSource,
-        upworkEmail, upworkPassword, fiverrEmail, fiverrPassword
+        googleEmail, googlePassword,
+        upworkEmail, upworkPassword,
+        fiverrEmail, fiverrPassword
       } = req.body;
       const sourcesArr = Array.isArray(sources) ? sources : ['upwork', 'freelancer', 'web'];
       const safeMax = Math.min(30, Math.max(5, Number(maxPerSource) || 10));
 
       const credentials = {
+        // Google OAuth — used for any platform that supports "Sign in with Google"
+        googleEmail:    typeof googleEmail    === 'string' ? googleEmail.trim()    : '',
+        googlePassword: typeof googlePassword === 'string' ? googlePassword        : '',
+        // Per-platform fallbacks (used only if Google creds are absent)
         upworkEmail:    typeof upworkEmail    === 'string' ? upworkEmail.trim()    : '',
         upworkPassword: typeof upworkPassword === 'string' ? upworkPassword        : '',
         fiverrEmail:    typeof fiverrEmail    === 'string' ? fiverrEmail.trim()    : '',

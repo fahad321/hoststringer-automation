@@ -625,26 +625,30 @@ async function runProjectSearch({
     results.forEach(emit);
   }
 
-  // Upwork — authenticated (if credentials given) OR RSS + Bing fallback
+  // Upwork — authenticated (Google or direct creds) OR RSS + Bing fallback
   if (sources.includes('upwork') && !isCancelled()) {
-    if (credentials.upworkEmail && credentials.upworkPassword) {
-      onProgress('Searching Upwork (authenticated — more results)…');
+    const hasGoogleCreds  = !!(credentials.googleEmail && credentials.googlePassword);
+    const hasUpworkCreds  = !!(credentials.upworkEmail && credentials.upworkPassword);
+    if (hasGoogleCreds || hasUpworkCreds) {
+      onProgress('Signing in to Upwork for authenticated job search…');
       try {
         const { scrapeUpworkAuth } = require('./platformScraper');
         const authResults = await scrapeUpworkAuth({
-          email: credentials.upworkEmail,
-          password: credentials.upworkPassword,
+          googleEmail:    credentials.googleEmail,
+          googlePassword: credentials.googlePassword,
+          email:          credentials.upworkEmail,
+          password:       credentials.upworkPassword,
           keywords: searchKeywords, location,
           maxResults: maxPerSource * 2
         });
         authResults.forEach(emit);
         if (authResults.length === 0) {
-          // Auth worked but no results — still run RSS as supplement
+          // Authenticated but no results — supplement with RSS
           const rssResults = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
           rssResults.forEach(emit);
         }
       } catch (err) {
-        onProgress(`Upwork auth failed (${err.message}) — falling back to RSS feed…`);
+        onProgress(`Upwork login failed (${err.message}) — falling back to RSS feed…`);
         const results = await searchUpwork({ keywords: searchKeywords, location, maxResults: maxPerSource });
         results.forEach(emit);
       }
@@ -685,13 +689,17 @@ async function runProjectSearch({
 
   // Fiverr buyer requests — requires credentials (clients post what they need)
   if (sources.includes('fiverr') && !isCancelled()) {
-    if (credentials.fiverrEmail && credentials.fiverrPassword) {
-      onProgress('Scraping Fiverr buyer requests (authenticated)…');
+    const hasGoogleCreds  = !!(credentials.googleEmail && credentials.googlePassword);
+    const hasFiverrCreds  = !!(credentials.fiverrEmail && credentials.fiverrPassword);
+    if (hasGoogleCreds || hasFiverrCreds) {
+      onProgress('Signing in to Fiverr to scrape buyer requests…');
       try {
         const { scrapeFiverrRequests } = require('./platformScraper');
         const results = await scrapeFiverrRequests({
-          email: credentials.fiverrEmail,
-          password: credentials.fiverrPassword,
+          googleEmail:    credentials.googleEmail,
+          googlePassword: credentials.googlePassword,
+          email:          credentials.fiverrEmail,
+          password:       credentials.fiverrPassword,
           keywords: searchKeywords,
           maxResults: maxPerSource
         });
@@ -700,7 +708,7 @@ async function runProjectSearch({
         onProgress(`Fiverr scraping failed: ${err.message}`);
       }
     } else {
-      onProgress('Fiverr: no credentials provided — enter email & password in Step 3 to enable.');
+      onProgress('Fiverr: enter Google or Fiverr credentials in Step 3 to enable buyer requests.');
     }
   }
 

@@ -241,6 +241,10 @@ form.addEventListener('submit', async (e) => {
       resourceType:   form.resourceType.value,
       maxPerSource:   form.maxPerSource.value,
       sources,
+      // Google credentials (primary — used for "Sign in with Google" on each platform)
+      googleEmail:    (document.getElementById('googleEmail')?.value || '').trim(),
+      googlePassword: document.getElementById('googlePassword')?.value || '',
+      // Per-platform fallbacks (used only when Google creds are absent)
       upworkEmail:    (document.getElementById('upworkEmail')?.value || '').trim(),
       upworkPassword: document.getElementById('upworkPassword')?.value || '',
       fiverrEmail:    (document.getElementById('fiverrEmail')?.value || '').trim(),

@@ -374,47 +374,66 @@
           </div>
         </div>
 
-        <!-- Step 3: Platform Credentials (optional) -->
+        <!-- Step 3: Credentials (optional) -->
         <div class="card">
           <div class="card-header">
             <div class="step-badge">3</div>
             <div class="card-header-text">
-              <h2>Platform Credentials <span style="font-size:13px;font-weight:400;color:var(--text-muted)">(optional)</span></h2>
-              <p>Log in to Upwork and Fiverr for deeper, authenticated searches</p>
+              <h2>Login Credentials <span style="font-size:13px;font-weight:400;color:var(--text-muted)">(optional — for deeper search)</span></h2>
+              <p>Sign in via Google to unlock authenticated Upwork search and Fiverr buyer requests</p>
             </div>
           </div>
           <div class="card-body">
-            <p class="section-label">Upwork</p>
+
+            <p class="section-label">Google Account <span class="field-optional">recommended — works across all platforms</span></p>
             <div class="form-grid">
               <label class="field">
-                <span class="field-label">Upwork Email</span>
-                <input type="email" id="upworkEmail" name="upworkEmail" placeholder="you@example.com" autocomplete="off" />
+                <span class="field-label">Google Email</span>
+                <input type="email" id="googleEmail" name="googleEmail" placeholder="you@gmail.com" autocomplete="off" />
               </label>
               <label class="field">
-                <span class="field-label">Upwork Password</span>
-                <input type="password" id="upworkPassword" name="upworkPassword" placeholder="Your Upwork password" autocomplete="new-password" />
-              </label>
-            </div>
-
-            <hr class="card-divider" />
-
-            <p class="section-label">Fiverr</p>
-            <div class="form-grid">
-              <label class="field">
-                <span class="field-label">Fiverr Email</span>
-                <input type="email" id="fiverrEmail" name="fiverrEmail" placeholder="you@example.com" autocomplete="off" />
-              </label>
-              <label class="field">
-                <span class="field-label">Fiverr Password</span>
-                <input type="password" id="fiverrPassword" name="fiverrPassword" placeholder="Your Fiverr password" autocomplete="new-password" />
+                <span class="field-label">Google Password</span>
+                <input type="password" id="googlePassword" name="googlePassword" placeholder="Your Google password" autocomplete="new-password" />
               </label>
             </div>
 
             <p class="creds-note">
-              <strong>Upwork:</strong> with credentials the app logs in automatically and searches authenticated job listings (more results, better detail).<br>
-              <strong>Fiverr Requests:</strong> clients post project briefs in the Buyer Requests section — only visible to logged-in sellers. Tick "Fiverr Requests" above and enter your seller account credentials.<br>
-              Credentials are sent only to this server and never stored or logged.
+              The app clicks <strong>"Sign in with Google"</strong> on each platform — you only need one set of credentials.<br>
+              <strong>Upwork:</strong> logs in and searches authenticated job listings (more results + full details).<br>
+              <strong>Fiverr Requests:</strong> buyers post project briefs here — only visible to logged-in sellers. Tick "Fiverr Requests" in the sources above.<br>
+              <strong>2-Step Verification:</strong> if your Google account has 2FA enabled, the login will pause.
+              Use a <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" style="color:var(--accent)">Google App Password</a> as your password to bypass 2FA automatically.
             </p>
+
+            <details style="margin-top:14px;">
+              <summary style="font-size:12.5px;font-weight:600;color:var(--text-muted);cursor:pointer;">Advanced: use platform-specific credentials instead</summary>
+              <div style="padding-top:12px;">
+                <p class="section-label">Upwork (direct login)</p>
+                <div class="form-grid">
+                  <label class="field">
+                    <span class="field-label">Upwork Email</span>
+                    <input type="email" id="upworkEmail" name="upworkEmail" placeholder="you@example.com" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Upwork Password</span>
+                    <input type="password" id="upworkPassword" name="upworkPassword" placeholder="Your Upwork password" autocomplete="new-password" />
+                  </label>
+                </div>
+                <p class="section-label" style="margin-top:12px;">Fiverr (direct login)</p>
+                <div class="form-grid">
+                  <label class="field">
+                    <span class="field-label">Fiverr Email</span>
+                    <input type="email" id="fiverrEmail" name="fiverrEmail" placeholder="you@example.com" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Fiverr Password</span>
+                    <input type="password" id="fiverrPassword" name="fiverrPassword" placeholder="Your Fiverr password" autocomplete="new-password" />
+                  </label>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Google credentials take priority if both are filled in.</p>
+              </div>
+            </details>
+
           </div>
         </div>
 
